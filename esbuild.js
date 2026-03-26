@@ -39,12 +39,21 @@ async function main() {
     format: 'iife',
   });
 
+  // Explorer combined webview bundle (Browser)
+  const explorerCtx = await esbuild.context({
+    ...commonOptions,
+    entryPoints: [resolve(__dirname, 'media/explorer/explorer.js')],
+    outfile: resolve(__dirname, 'dist/explorer.js'),
+    platform: 'browser',
+    format: 'iife',
+  });
+
   if (watch) {
-    await Promise.all([extensionCtx.watch(), graphCtx.watch(), timelineCtx.watch()]);
+    await Promise.all([extensionCtx.watch(), graphCtx.watch(), timelineCtx.watch(), explorerCtx.watch()]);
     console.log('Watching for changes...');
   } else {
-    await Promise.all([extensionCtx.rebuild(), graphCtx.rebuild(), timelineCtx.rebuild()]);
-    await Promise.all([extensionCtx.dispose(), graphCtx.dispose(), timelineCtx.dispose()]);
+    await Promise.all([extensionCtx.rebuild(), graphCtx.rebuild(), timelineCtx.rebuild(), explorerCtx.rebuild()]);
+    await Promise.all([extensionCtx.dispose(), graphCtx.dispose(), timelineCtx.dispose(), explorerCtx.dispose()]);
     console.log('Build complete.');
   }
 }

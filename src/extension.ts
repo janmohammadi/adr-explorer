@@ -3,6 +3,7 @@ import { AdrRepository } from './adrRepository';
 import { AdrTreeDataProvider } from './adrTreeProvider';
 import { GraphViewProvider } from './graphViewProvider';
 import { TimelineViewProvider } from './timelineViewProvider';
+import { ExplorerViewProvider } from './explorerViewProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   const repository = new AdrRepository();
@@ -13,10 +14,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const graphView = new GraphViewProvider(context.extensionUri, repository);
   const timelineView = new TimelineViewProvider(context.extensionUri, repository);
+  const explorerView = new ExplorerViewProvider(context.extensionUri, repository);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('adrExplorer.openGraphView', () => graphView.show()),
     vscode.commands.registerCommand('adrExplorer.openTimelineView', () => timelineView.show()),
+    vscode.commands.registerCommand('adrExplorer.openExplorerView', () => explorerView.show()),
     vscode.commands.registerCommand('adrExplorer.refresh', async () => {
       await repository.initialize();
       treeProvider.refresh();

@@ -36,6 +36,12 @@
     },
     "commands": [
       {
+        "command": "adrExplorer.openExplorerView",
+        "title": "Open Explorer View",
+        "category": "ADR Explorer",
+        "icon": "$(layout)"
+      },
+      {
         "command": "adrExplorer.openGraphView",
         "title": "Open Graph View",
         "category": "ADR Explorer",
@@ -61,6 +67,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "adrExplorer.openExplorerView",
+          "when": "view == adrExplorer.list",
+          "group": "navigation@0"
+        },
         {
           "command": "adrExplorer.openGraphView",
           "when": "view == adrExplorer.list",
@@ -96,6 +107,10 @@
   "dependencies": {
     "cytoscape": "^3.30.0",
     "cytoscape-dagre": "^2.5.0",
+    "d3-drag": "^3.0.0",
+    "d3-force": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
     "dagre": "^0.8.5",
     "gray-matter": "^4.0.3"
   }
