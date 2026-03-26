@@ -112,6 +112,8 @@
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "dagre": "^0.8.5",
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "marked": "^15.0.0",
+    "mermaid": "^11.4.0"
   }
 }

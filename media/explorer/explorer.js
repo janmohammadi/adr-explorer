@@ -2,6 +2,8 @@ const { select } = require('d3-selection');
 const { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } = require('d3-force');
 const { zoom: d3Zoom, zoomIdentity } = require('d3-zoom');
 const { drag: d3Drag } = require('d3-drag');
+const { Marked } = require('marked');
+const mermaid = require('mermaid');
 
 // @ts-ignore
 const vscode = acquireVsCodeApi();
@@ -28,11 +30,31 @@ function truncate(str, len) {
   return str.length > len ? str.slice(0, len) + '...' : str;
 }
 
+// ===== Markdown Setup =====
+const marked = new Marked();
+let mermaidId = 0;
+
+mermaid.default.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    darkMode: true,
+    background: '#141517',
+    primaryColor: '#3b82f6',
+    primaryTextColor: '#e0e0f0',
+    lineColor: '#555',
+    textColor: '#c0c0d0',
+    mainBkg: '#1e1e30',
+    nodeBorder: '#3b82f6',
+  },
+});
+
 // ===== State =====
 let allAdrs = [];
 let allEdges = [];
 let searchQuery = '';
 let statusFilter = 'ALL';
+let selectedAdrId = null;
 
 // ===== Filtering =====
 function getFilteredData() {
@@ -49,6 +71,114 @@ function getFilteredData() {
   const filteredEdges = allEdges.filter(e => filteredIds.has(e.source) && filteredIds.has(e.target));
   return { adrs: filteredAdrs, edges: filteredEdges };
 }
+
+function selectAdr(adrId) {
+  if (selectedAdrId === adrId) {
+    selectedAdrId = null;
+    Preview.close();
+  } else {
+    selectedAdrId = adrId;
+    const adr = allAdrs.find(a => a.id === adrId);
+    if (adr) {
+      Preview.show(adr);
+    }
+  }
+  Timeline.updateSelection(selectedAdrId);
+  Graph._selectedNodeId = selectedAdrId;
+  Graph.updateStyles();
+}
+
+// ===== Preview Module =====
+const Preview = {
+  async show(adr) {
+    const panel = document.getElementById('preview-panel');
+    const idEl = document.getElementById('preview-id');
+    const titleEl = document.getElementById('preview-title');
+    const metaEl = document.getElementById('preview-meta');
+    const bodyEl = document.getElementById('preview-body');
+    const editBtn = document.getElementById('preview-edit-btn');
+
+    if (!panel || !bodyEl) return;
+
+    // Header info
+    if (idEl) idEl.textContent = adr.id;
+    if (titleEl) titleEl.textContent = adr.title;
+
+    // Meta info
+    if (metaEl) {
+      const statusDot = `<span class="preview-status-dot" style="background:${getStatusColor(adr.status)}"></span>`;
+      const tagsHtml = (adr.tags || []).map(t =>
+        `<span class="preview-tag">${escapeHtml(t)}</span>`
+      ).join(' ');
+
+      metaEl.innerHTML = `
+        <div class="preview-meta-item">
+          ${statusDot}
+          <span class="preview-meta-value" style="text-transform:uppercase">${escapeHtml(adr.status)}</span>
+        </div>
+        <div class="preview-meta-item">
+          <span class="preview-meta-label">date:</span>
+          <span class="preview-meta-value">${escapeHtml(adr.date)}</span>
+        </div>
+        ${adr.deciders && adr.deciders.length ? `
+          <div class="preview-meta-item">
+            <span class="preview-meta-label">deciders:</span>
+            <span class="preview-meta-value">${escapeHtml(adr.deciders.join(', '))}</span>
+          </div>
+        ` : ''}
+        ${tagsHtml ? `<div class="preview-meta-item">${tagsHtml}</div>` : ''}
+      `;
+    }
+
+    // Edit button
+    if (editBtn) {
+      editBtn.onclick = () => {
+        if (adr.filePath) {
+          vscode.postMessage({ type: 'openFile', filePath: adr.filePath });
+        }
+      };
+    }
+
+    // Render markdown content
+    const content = adr.content || '';
+    let html = await marked.parse(content);
+
+    // Replace mermaid code blocks with rendered containers
+    // marked wraps ```mermaid blocks in <pre><code class="language-mermaid">
+    bodyEl.innerHTML = html;
+
+    // Find mermaid code blocks and render them
+    const mermaidBlocks = bodyEl.querySelectorAll('code.language-mermaid');
+    for (const block of mermaidBlocks) {
+      const pre = block.parentElement;
+      if (!pre || pre.tagName !== 'PRE') continue;
+      const mermaidCode = block.textContent || '';
+      const containerId = `mermaid-${++mermaidId}`;
+      const div = document.createElement('div');
+      div.className = 'mermaid';
+      div.id = containerId;
+      try {
+        const { svg } = await mermaid.default.render(containerId, mermaidCode);
+        div.innerHTML = svg;
+      } catch (e) {
+        div.innerHTML = `<pre style="color:#ef4444;font-size:11px">Mermaid render error: ${escapeHtml(String(e))}</pre>`;
+      }
+      pre.replaceWith(div);
+    }
+
+    // Open panel + show its resize handle
+    panel.classList.add('open');
+    const handle = document.getElementById('resize-handle-preview');
+    if (handle) handle.classList.add('visible');
+  },
+
+  close() {
+    const panel = document.getElementById('preview-panel');
+    if (panel) panel.classList.remove('open');
+    const handle = document.getElementById('resize-handle-preview');
+    if (handle) handle.classList.remove('visible');
+  }
+};
 
 // ===== Timeline Module =====
 const Timeline = {
@@ -67,9 +197,10 @@ const Timeline = {
       const tagsHtml = (adr.tags || []).map(t =>
         `<span class="meta-tag">"${escapeHtml(t)}"</span>`
       ).join(' ');
+      const isSelected = adr.id === selectedAdrId;
 
       return `
-        <div class="timeline-entry" data-filepath="${escapeHtml(adr.filePath || '')}">
+        <div class="timeline-entry${isSelected ? ' selected' : ''}" data-adr-id="${escapeHtml(adr.id)}">
           <div class="entry-number">${(index + 1).toString().padStart(2, '0')}</div>
           <div class="entry-dot-container">
             <div class="entry-dot ${adr.status}"></div>
@@ -90,11 +221,18 @@ const Timeline = {
 
     container.querySelectorAll('.timeline-entry').forEach(item => {
       item.addEventListener('click', () => {
-        const filePath = item.getAttribute('data-filepath');
-        if (filePath) {
-          vscode.postMessage({ type: 'openFile', filePath });
-        }
+        const adrId = item.getAttribute('data-adr-id');
+        if (adrId) selectAdr(adrId);
       });
+    });
+  },
+
+  updateSelection(adrId) {
+    const container = document.getElementById('timeline-entries');
+    if (!container) return;
+    container.querySelectorAll('.timeline-entry').forEach(item => {
+      const id = item.getAttribute('data-adr-id');
+      item.classList.toggle('selected', id === adrId);
     });
   }
 };
@@ -155,8 +293,7 @@ const Graph = {
 
     // Click background to deselect
     this._svg.on('click', () => {
-      this._selectedNodeId = null;
-      this.updateStyles();
+      selectAdr(this._selectedNodeId); // toggle off
     });
 
     // ResizeObserver
@@ -249,8 +386,7 @@ const Graph = {
       .attr('cursor', 'pointer')
       .on('click', function (event, d) {
         event.stopPropagation();
-        self._selectedNodeId = self._selectedNodeId === d.id ? null : d.id;
-        self.updateStyles();
+        selectAdr(d.id);
       })
       .on('mouseenter', function (event, d) {
         self._hoveredNodeId = d.id;
@@ -295,7 +431,6 @@ const Graph = {
       .attr('font-family', "'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace")
       .style('pointer-events', 'none')
       .text(d => {
-        // Extract short ID: "ADR-0001" -> "001", or just use as-is if short
         const match = d.id.match(/\d+/);
         return match ? match[0] : d.id;
       });
@@ -324,14 +459,6 @@ const Graph = {
 
       this._nodeSel
         .attr('transform', d => `translate(${d.x},${d.y})`);
-    });
-
-    // Open file on double-click
-    this._nodeSel.on('dblclick', (event, d) => {
-      event.stopPropagation();
-      if (d.filePath) {
-        vscode.postMessage({ type: 'openFile', filePath: d.filePath });
-      }
     });
   },
 
@@ -365,10 +492,8 @@ const Graph = {
 
   focusNode(adrId) {
     if (!this._nodeSel || !this._svg) return;
-    this._selectedNodeId = adrId;
-    this.updateStyles();
+    selectAdr(adrId);
 
-    // Find the node data
     let targetNode = null;
     this._nodeSel.each(function (d) {
       if (d.id === adrId) targetNode = d;
@@ -383,6 +508,60 @@ const Graph = {
         transform
       );
     }
+  }
+};
+
+// ===== Resizer Module =====
+const Resizer = {
+  init() {
+    const handleTimeline = document.getElementById('resize-handle-timeline');
+    const handlePreview = document.getElementById('resize-handle-preview');
+    const timelinePanel = document.querySelector('.timeline-panel');
+    const graphPanel = document.querySelector('.graph-panel');
+    const previewPanel = document.getElementById('preview-panel');
+
+    if (handleTimeline && timelinePanel && graphPanel) {
+      this._setupHandle(handleTimeline, {
+        getSize: () => timelinePanel.getBoundingClientRect().width,
+        setSize: (w) => { timelinePanel.style.width = Math.max(140, Math.min(w, 600)) + 'px'; },
+        direction: 1,
+      });
+    }
+
+    if (handlePreview && previewPanel && graphPanel) {
+      this._setupHandle(handlePreview, {
+        getSize: () => previewPanel.getBoundingClientRect().width,
+        setSize: (w) => { previewPanel.style.width = Math.max(200, Math.min(w, 700)) + 'px'; },
+        direction: -1, // drag left = wider preview
+      });
+    }
+  },
+
+  _setupHandle(handle, { getSize, setSize, direction }) {
+    let startX = 0;
+    let startSize = 0;
+
+    const onMouseMove = (e) => {
+      const delta = (e.clientX - startX) * direction;
+      setSize(startSize + delta);
+    };
+
+    const onMouseUp = () => {
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startSize = getSize();
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    });
   }
 };
 
@@ -408,6 +587,15 @@ function applyFilters() {
   }
   Timeline.render(adrs);
   Graph.render(adrs, edges);
+
+  // If selected ADR is no longer in filtered set, close preview
+  if (selectedAdrId) {
+    const stillVisible = adrs.some(a => a.id === selectedAdrId);
+    if (!stillVisible) {
+      selectedAdrId = null;
+      Preview.close();
+    }
+  }
 }
 
 // ===== Message Handling =====
@@ -432,6 +620,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const graphContainer = document.getElementById('graph-container');
   if (graphContainer) Graph.init(graphContainer);
+
+  Resizer.init();
+
+  // Preview close button
+  const previewCloseBtn = document.getElementById('preview-close-btn');
+  if (previewCloseBtn) {
+    previewCloseBtn.addEventListener('click', () => {
+      selectedAdrId = null;
+      Preview.close();
+      Timeline.updateSelection(null);
+      Graph._selectedNodeId = null;
+      Graph.updateStyles();
+    });
+  }
 
   vscode.postMessage({ type: 'ready' });
 });
