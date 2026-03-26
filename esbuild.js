@@ -21,24 +21,6 @@ async function main() {
     external: ['vscode'],
   });
 
-  // Graph webview bundle (Browser)
-  const graphCtx = await esbuild.context({
-    ...commonOptions,
-    entryPoints: [resolve(__dirname, 'media/graph/graph.js')],
-    outfile: resolve(__dirname, 'dist/graph.js'),
-    platform: 'browser',
-    format: 'iife',
-  });
-
-  // Timeline webview bundle (Browser)
-  const timelineCtx = await esbuild.context({
-    ...commonOptions,
-    entryPoints: [resolve(__dirname, 'media/timeline/timeline.js')],
-    outfile: resolve(__dirname, 'dist/timeline.js'),
-    platform: 'browser',
-    format: 'iife',
-  });
-
   // Explorer combined webview bundle (Browser)
   const explorerCtx = await esbuild.context({
     ...commonOptions,
@@ -49,11 +31,11 @@ async function main() {
   });
 
   if (watch) {
-    await Promise.all([extensionCtx.watch(), graphCtx.watch(), timelineCtx.watch(), explorerCtx.watch()]);
+    await Promise.all([extensionCtx.watch(), explorerCtx.watch()]);
     console.log('Watching for changes...');
   } else {
-    await Promise.all([extensionCtx.rebuild(), graphCtx.rebuild(), timelineCtx.rebuild(), explorerCtx.rebuild()]);
-    await Promise.all([extensionCtx.dispose(), graphCtx.dispose(), timelineCtx.dispose(), explorerCtx.dispose()]);
+    await Promise.all([extensionCtx.rebuild(), explorerCtx.rebuild()]);
+    await Promise.all([extensionCtx.dispose(), explorerCtx.dispose()]);
     console.log('Build complete.');
   }
 }

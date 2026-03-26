@@ -53,7 +53,8 @@ mermaid.default.initialize({
 let allAdrs = [];
 let allEdges = [];
 let searchQuery = '';
-let statusFilter = 'ALL';
+let activeStatuses = new Set();
+let activeTags = new Set();
 let selectedAdrId = null;
 
 // ===== Filtering =====
@@ -64,12 +65,49 @@ function getFilteredData() {
       adr.title.toLowerCase().includes(query) ||
       adr.id.toLowerCase().includes(query) ||
       (adr.tags && adr.tags.some(t => t.toLowerCase().includes(query)));
-    const matchesStatus = statusFilter === 'ALL' || adr.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesStatus = activeStatuses.size === 0 || activeStatuses.has(adr.status);
+    const matchesTags = activeTags.size === 0 ||
+      (adr.tags && adr.tags.some(t => activeTags.has(t)));
+    return matchesSearch && matchesStatus && matchesTags;
   });
   const filteredIds = new Set(filteredAdrs.map(a => a.id));
   const filteredEdges = allEdges.filter(e => filteredIds.has(e.source) && filteredIds.has(e.target));
   return { adrs: filteredAdrs, edges: filteredEdges };
+}
+
+// ===== Tag Chips =====
+function renderTagChips() {
+  const container = document.getElementById('tag-chips');
+  if (!container) return;
+
+  // Collect tags with counts
+  const tagCounts = {};
+  for (const adr of allAdrs) {
+    if (adr.tags) {
+      for (const tag of adr.tags) {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      }
+    }
+  }
+
+  const sortedTags = Object.keys(tagCounts).sort();
+  container.innerHTML = sortedTags.map(tag => {
+    const isActive = activeTags.has(tag);
+    return `<button class="tag-chip${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<span class="tag-chip-count">${tagCounts[tag]}</span></button>`;
+  }).join('');
+
+  container.querySelectorAll('.tag-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tag = btn.getAttribute('data-tag');
+      if (activeTags.has(tag)) {
+        activeTags.delete(tag);
+      } else {
+        activeTags.add(tag);
+      }
+      renderTagChips();
+      applyFilters();
+    });
+  });
 }
 
 function selectAdr(adrId) {
@@ -198,9 +236,10 @@ const Timeline = {
         `<span class="meta-tag">"${escapeHtml(t)}"</span>`
       ).join(' ');
       const isSelected = adr.id === selectedAdrId;
+      const statusClass = (adr.status === 'superseded' || adr.status === 'deprecated') ? ` status-${adr.status}` : '';
 
       return `
-        <div class="timeline-entry${isSelected ? ' selected' : ''}" data-adr-id="${escapeHtml(adr.id)}">
+        <div class="timeline-entry${isSelected ? ' selected' : ''}${statusClass}" data-adr-id="${escapeHtml(adr.id)}">
           <div class="entry-number">${(index + 1).toString().padStart(2, '0')}</div>
           <div class="entry-dot-container">
             <div class="entry-dot ${adr.status}"></div>
@@ -413,6 +452,11 @@ const Graph = {
         })
       );
 
+    // Dim superseded/deprecated nodes
+    this._nodeSel.style('opacity', d =>
+      (d.status === 'superseded' || d.status === 'deprecated') ? 0.4 : 1
+    );
+
     // Node circles
     this._nodeSel.append('circle')
       .attr('r', 14)
@@ -482,6 +526,9 @@ const Graph = {
     if (this._nodeSel) {
       this._nodeSel.each(function (d) {
         const isFocused = d.id === selectedId || d.id === hoveredId;
+        const isDimmed = d.status === 'superseded' || d.status === 'deprecated';
+        select(this)
+          .style('opacity', isFocused ? 1 : (isDimmed ? 0.4 : 1));
         select(this).select('circle')
           .attr('stroke', isFocused ? '#fff' : '#1a1b1e')
           .attr('stroke-width', isFocused ? 3 : 2)
@@ -574,9 +621,22 @@ function onSearchInput(e) {
   searchTimeout = setTimeout(applyFilters, 200);
 }
 
-function onStatusFilterChange(e) {
-  statusFilter = e.target.value;
-  applyFilters();
+function renderStatusChips() {
+  const container = document.getElementById('status-chips');
+  if (!container) return;
+  const statuses = ['proposed', 'accepted', 'deprecated', 'superseded'];
+  container.innerHTML = statuses.map(s => {
+    const isActive = activeStatuses.has(s);
+    return `<button class="status-chip${isActive ? ' active' : ''}" data-status="${s}"><span class="status-chip-dot ${s}"></span>${s.toUpperCase()}</button>`;
+  }).join('');
+  container.querySelectorAll('.status-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.getAttribute('data-status');
+      if (activeStatuses.has(s)) { activeStatuses.delete(s); } else { activeStatuses.add(s); }
+      renderStatusChips();
+      applyFilters();
+    });
+  });
 }
 
 function applyFilters() {
@@ -604,6 +664,7 @@ window.addEventListener('message', (event) => {
   if (msg.type === 'update') {
     allAdrs = msg.adrs || [];
     allEdges = msg.edges || [];
+    renderTagChips();
     applyFilters();
   } else if (msg.type === 'focusNode') {
     Graph.focusNode(msg.adrId);
@@ -613,10 +674,9 @@ window.addEventListener('message', (event) => {
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('search-input');
-  const statusSelect = document.getElementById('status-filter');
-
   if (searchInput) searchInput.addEventListener('input', onSearchInput);
-  if (statusSelect) statusSelect.addEventListener('change', onStatusFilterChange);
+
+  renderStatusChips();
 
   const graphContainer = document.getElementById('graph-container');
   if (graphContainer) Graph.init(graphContainer);

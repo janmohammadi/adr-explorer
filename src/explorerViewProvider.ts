@@ -102,16 +102,6 @@ export class ExplorerViewProvider {
     <!-- Header / Tab Bar -->
     <div class="header">
       <div class="header-left">
-        <div class="header-tab">
-          <svg class="header-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-          </svg>
-          <span>ADR Explorer</span>
-          <svg class="header-tab-close" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </div>
-
         <!-- Search -->
         <div class="header-search">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -120,19 +110,11 @@ export class ExplorerViewProvider {
           <input id="search-input" type="text" placeholder="Search ADRs..." />
         </div>
 
-        <!-- Status Filter -->
-        <div class="header-filter">
-          <svg class="filter-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-          </svg>
-          <select id="status-filter">
-            <option value="ALL">ALL STATUS</option>
-            <option value="proposed">PROPOSED</option>
-            <option value="accepted">ACCEPTED</option>
-            <option value="deprecated">DEPRECATED</option>
-            <option value="superseded">SUPERSEDED</option>
-          </select>
-        </div>
+        <!-- Status Filter Chips (populated dynamically) -->
+        <div id="status-chips" class="header-status-chips"></div>
+
+        <!-- Tag Filter Chips (populated dynamically) -->
+        <div id="tag-chips" class="header-tags"></div>
       </div>
 
       <div class="header-right">

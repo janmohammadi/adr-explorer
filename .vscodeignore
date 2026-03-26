@@ -1,7 +1,5 @@
 .vscode/**
 src/**
-media/graph/graph.js
-media/timeline/timeline.js
 media/explorer/explorer.js
 node_modules/**
 test-fixtures/**
