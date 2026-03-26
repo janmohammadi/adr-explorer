@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /c/Repos/ideas-pocs/adr-vs-code -type d -name adr*)"
     ]
   }
 }
