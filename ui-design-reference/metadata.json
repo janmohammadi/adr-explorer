@@ -1,0 +1,5 @@
+{
+  "name": "ADR Explorer",
+  "description": "A technical dashboard for visualizing Architecture Decision Records (ADRs) with timeline and graph views.",
+  "requestFramePermissions": []
+}

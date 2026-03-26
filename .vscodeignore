@@ -1,0 +1,10 @@
+.vscode/**
+src/**
+media/graph/graph.js
+media/timeline/timeline.js
+node_modules/**
+test-fixtures/**
+tsconfig.json
+esbuild.js
+**/*.map
+.gitignore

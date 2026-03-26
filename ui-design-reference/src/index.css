@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-proposed: #f27d26;
+  --color-accepted: #3b82f6;
+  --color-superseded: #ef4444;
+  --color-bg-dark: #1a1b1e;
+  --color-panel-dark: #141517;
+}
+
+body {
+  @apply bg-bg-dark text-gray-300 font-sans antialiased overflow-hidden;
+}
+
+.grid-background {
+  background-image: radial-gradient(circle, #333 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+

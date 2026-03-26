@@ -1,0 +1,102 @@
+{
+  "name": "adr-explorer",
+  "displayName": "ADR Explorer",
+  "description": "Visualize Architecture Decision Records with timeline and graph views",
+  "version": "0.1.0",
+  "publisher": "adr-explorer",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/adr/*.md",
+    "workspaceContains:**/docs/adr/*.md",
+    "workspaceContains:**/docs/decisions/*.md"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adr-explorer",
+          "title": "ADR Explorer",
+          "icon": "resources/adr-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "adr-explorer": [
+        {
+          "id": "adrExplorer.list",
+          "name": "Decisions"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "adrExplorer.openGraphView",
+        "title": "Open Graph View",
+        "category": "ADR Explorer",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "adrExplorer.openTimelineView",
+        "title": "Open Timeline View",
+        "category": "ADR Explorer",
+        "icon": "$(timeline-open)"
+      },
+      {
+        "command": "adrExplorer.refresh",
+        "title": "Refresh",
+        "category": "ADR Explorer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adrExplorer.openAdrFile",
+        "title": "Open ADR File",
+        "category": "ADR Explorer"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "adrExplorer.openGraphView",
+          "when": "view == adrExplorer.list",
+          "group": "navigation@1"
+        },
+        {
+          "command": "adrExplorer.openTimelineView",
+          "when": "view == adrExplorer.list",
+          "group": "navigation@2"
+        },
+        {
+          "command": "adrExplorer.refresh",
+          "when": "view == adrExplorer.list",
+          "group": "navigation@3"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "lint": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "cytoscape": "^3.30.0",
+    "cytoscape-dagre": "^2.5.0",
+    "dagre": "^0.8.5",
+    "gray-matter": "^4.0.3"
+  }
+}

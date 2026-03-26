@@ -1,0 +1,156 @@
+body {
+  background-color: #1e1e2e;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+#cy {
+  width: 100vw;
+  height: calc(100vh - 40px);
+  position: absolute;
+  top: 40px;
+  left: 0;
+}
+
+#toolbar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  background: #15151f;
+  border-bottom: 1px solid #2d2d3d;
+}
+
+#toolbar button {
+  padding: 5px 14px;
+  border: 1px solid #3d3d5c;
+  border-radius: 5px;
+  background: #252538;
+  color: #a0a0b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+#toolbar button:hover {
+  background: #35354f;
+  color: #e0e0f0;
+  border-color: #5555aa;
+}
+
+#toolbar button.active {
+  background: #3b3b6b;
+  color: #e0e0f0;
+  border-color: #6666cc;
+}
+
+#toolbar .separator {
+  width: 1px;
+  height: 20px;
+  background: #2d2d3d;
+  margin: 0 4px;
+}
+
+#toolbar .label {
+  color: #6b6b8a;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+#legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #8888a8;
+}
+
+#legend .legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1.5px solid;
+}
+
+#legend .legend-dot.accepted {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+}
+
+#legend .legend-dot.proposed {
+  background: #3d2e08;
+  border-color: #f59e0b;
+}
+
+#legend .legend-dot.deprecated {
+  background: #2d2d2d;
+  border-color: #6b7280;
+}
+
+#legend .legend-dot.superseded {
+  background: #3b1c1c;
+  border-color: #b91c1c;
+}
+
+#tooltip {
+  position: absolute;
+  background: #252538;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #c0c0d0;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 300px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  line-height: 1.5;
+}
+
+#tooltip .tooltip-id {
+  color: #6b6b8a;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+#tooltip .tooltip-title {
+  color: #e0e0f0;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+#tooltip .tooltip-meta {
+  display: flex;
+  gap: 10px;
+  color: #8888a8;
+  font-size: 11px;
+}
+
+#tooltip .tooltip-status {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+#tooltip .tooltip-status.accepted { background: #1e3a5f; color: #93c5fd; }
+#tooltip .tooltip-status.proposed { background: #3d2e08; color: #fcd34d; }
+#tooltip .tooltip-status.deprecated { background: #2d2d2d; color: #9ca3af; }
+#tooltip .tooltip-status.superseded { background: #3b1c1c; color: #fca5a5; }
+
+#tooltip.hidden {
+  display: none;
+}
