@@ -2,9 +2,7 @@ import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
 import { getNonce } from './utils';
 
-export class ExplorerViewProvider implements vscode.WebviewViewProvider {
-  public static readonly sidebarViewType = 'adrExplorer.sidebarView';
-
+export class ExplorerViewProvider {
   private panel: vscode.WebviewPanel | undefined;
   private panelDisposables: vscode.Disposable[] = [];
 
@@ -12,24 +10,6 @@ export class ExplorerViewProvider implements vscode.WebviewViewProvider {
     private extensionUri: vscode.Uri,
     private repository: AdrRepository
   ) {}
-
-  /** Called by VS Code when the sidebar view becomes visible. */
-  resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
-  ): void {
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = this.getSidebarHtml(webviewView.webview);
-    webviewView.webview.onDidReceiveMessage(msg => {
-      if (msg.type === 'openPanel') {
-        this.showPanel();
-      }
-    });
-
-    // Auto-open the editor panel when the sidebar becomes visible
-    this.showPanel();
-  }
 
   /** Opens or reveals the full explorer in an editor tab. */
   showPanel(): void {
@@ -95,37 +75,6 @@ export class ExplorerViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private getSidebarHtml(_webview: vscode.Webview): string {
-    const nonce = getNonce();
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <style>
-    body { padding: 12px; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
-    .info { opacity: 0.7; font-size: 12px; margin-bottom: 12px; }
-    button {
-      display: block; width: 100%; padding: 6px 12px;
-      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-      border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
-    }
-    button:hover { background: var(--vscode-button-hoverBackground); }
-  </style>
-</head>
-<body>
-  <p class="info">ADR Explorer is open in the editor.</p>
-  <button id="open-btn">Open ADR Explorer</button>
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    document.getElementById('open-btn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'openPanel' });
-    });
-  </script>
-</body>
-</html>`;
-  }
-
   private getPanelHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
     const explorerJsUri = webview.asWebviewUri(
@@ -162,11 +111,6 @@ export class ExplorerViewProvider implements vscode.WebviewViewProvider {
           <input id="search-input" type="text" placeholder="Search ADRs..." />
         </div>
 
-        <!-- Status Filter Chips (populated dynamically) -->
-        <div id="status-chips" class="header-status-chips"></div>
-
-        <!-- Tag Filter Chips (populated dynamically) -->
-        <div id="tag-chips" class="header-tags"></div>
       </div>
 
       <div class="header-right">
@@ -205,6 +149,27 @@ export class ExplorerViewProvider implements vscode.WebviewViewProvider {
           <div class="label-icon"><div class="label-icon-dot"></div></div>
           ADR Graph
         </div>
+        <div class="graph-controls">
+          <div class="graph-toolbar">
+            <button id="graph-filter-toggle" class="graph-toolbar-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/>
+              </svg>
+              Filter
+              <span id="graph-filter-count" class="graph-toolbar-badge" style="display:none"></span>
+            </button>
+            <button id="graph-group-toggle" class="graph-toolbar-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+              </svg>
+              Group
+              <span id="graph-group-count" class="graph-toolbar-badge" style="display:none"></span>
+            </button>
+          </div>
+          <div id="graph-filter-tag-list" class="graph-toolbar-list"></div>
+          <div id="graph-group-tag-list" class="graph-toolbar-list"></div>
+        </div>
+        <div id="graph-group-legend" class="graph-group-legend"></div>
       </div>
 
       <!-- Resize handle: graph | preview (hidden until preview opens) -->

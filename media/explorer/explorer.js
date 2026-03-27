@@ -1,5 +1,5 @@
 const { select } = require('d3-selection');
-const { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } = require('d3-force');
+const { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, forceRadial } = require('d3-force');
 const { zoom: d3Zoom, zoomIdentity } = require('d3-zoom');
 const { drag: d3Drag } = require('d3-drag');
 const { Marked } = require('marked');
@@ -19,6 +19,12 @@ const STATUS_COLORS = {
 function getStatusColor(status) {
   return STATUS_COLORS[status] || STATUS_COLORS.proposed;
 }
+
+const TAG_GROUP_COLORS = [
+  '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
+  '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316',
+  '#84cc16', '#a855f7', '#22d3ee', '#e11d48', '#facc15',
+];
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -56,6 +62,7 @@ let searchQuery = '';
 let activeStatuses = new Set();
 let activeTags = new Set();
 let selectedAdrId = null;
+let groupByTags = new Set(); // tags currently used for graph grouping
 
 // ===== Filtering =====
 function getFilteredData() {
@@ -75,12 +82,8 @@ function getFilteredData() {
   return { adrs: filteredAdrs, edges: filteredEdges };
 }
 
-// ===== Tag Chips =====
-function renderTagChips() {
-  const container = document.getElementById('tag-chips');
-  if (!container) return;
-
-  // Collect tags with counts
+// ===== Tag Helpers =====
+function getTagCounts() {
   const tagCounts = {};
   for (const adr of allAdrs) {
     if (adr.tags) {
@@ -89,25 +92,7 @@ function renderTagChips() {
       }
     }
   }
-
-  const sortedTags = Object.keys(tagCounts).sort();
-  container.innerHTML = sortedTags.map(tag => {
-    const isActive = activeTags.has(tag);
-    return `<button class="tag-chip${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<span class="tag-chip-count">${tagCounts[tag]}</span></button>`;
-  }).join('');
-
-  container.querySelectorAll('.tag-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tag = btn.getAttribute('data-tag');
-      if (activeTags.has(tag)) {
-        activeTags.delete(tag);
-      } else {
-        activeTags.add(tag);
-      }
-      renderTagChips();
-      applyFilters();
-    });
-  });
+  return tagCounts;
 }
 
 function selectAdr(adrId) {
@@ -212,7 +197,10 @@ const Preview = {
 
   close() {
     const panel = document.getElementById('preview-panel');
-    if (panel) panel.classList.remove('open');
+    if (panel) {
+      panel.classList.remove('open');
+      panel.style.width = '';
+    }
     const handle = document.getElementById('resize-handle-preview');
     if (handle) handle.classList.remove('visible');
   }
@@ -284,11 +272,14 @@ const Graph = {
   _linkSel: null,
   _nodeSel: null,
   _linkTextSel: null,
+  _hullSel: null,
   _container: null,
   _width: 0,
   _height: 0,
   _selectedNodeId: null,
   _hoveredNodeId: null,
+  _currentNodes: null,
+  _tagColorMap: {},
 
   init(container) {
     this._container = container;
@@ -374,6 +365,22 @@ const Graph = {
     const nodes = adrs.map(d => ({ ...d }));
     const links = [];
 
+    // Build tag color map for all known tags
+    const allKnownTags = {};
+    for (const adr of adrs) {
+      if (adr.tags) {
+        for (const tag of adr.tags) {
+          if (!allKnownTags[tag]) allKnownTags[tag] = true;
+        }
+      }
+    }
+    const sortedAllTags = Object.keys(allKnownTags).sort();
+    sortedAllTags.forEach((tag, i) => {
+      if (!this._tagColorMap[tag]) {
+        this._tagColorMap[tag] = TAG_GROUP_COLORS[i % TAG_GROUP_COLORS.length];
+      }
+    });
+
     edges.forEach(edge => {
       const sourceExists = nodes.find(n => n.id === edge.source);
       const targetExists = nodes.find(n => n.id === edge.target);
@@ -383,13 +390,18 @@ const Graph = {
     });
 
     // Force simulation
+    const radius = Math.min(width, height) * 0.35;
     const simulation = forceSimulation(nodes)
-      .force('link', forceLink(links).id(d => d.id).distance(120))
-      .force('charge', forceManyBody().strength(-500))
+      .force('link', forceLink(links).id(d => d.id).distance(100))
+      .force('charge', forceManyBody().strength(-300))
       .force('center', forceCenter(width / 2, height / 2))
-      .force('collision', forceCollide().radius(40));
+      .force('collision', forceCollide().radius(40))
+      .force('radial', forceRadial(radius * 0.6, width / 2, height / 2).strength(0.05));
 
     this._simulation = simulation;
+
+    // Hull group (behind everything)
+    this._hullGroup = this._g.append('g').attr('class', 'hulls-group');
 
     // Links
     const linkGroup = this._g.append('g').attr('class', 'links-group');
@@ -489,6 +501,8 @@ const Graph = {
       .style('pointer-events', 'none')
       .text(d => truncate(d.title, 25));
 
+    this._currentNodes = nodes;
+
     // Tick
     simulation.on('tick', () => {
       this._linkSel
@@ -503,7 +517,135 @@ const Graph = {
 
       this._nodeSel
         .attr('transform', d => `translate(${d.x},${d.y})`);
+
+      // Update hulls
+      if (groupByTags.size > 0 && this._hullGroup) {
+        this.renderHulls();
+      }
     });
+  },
+
+  renderHulls() {
+    if (!this._hullGroup || !this._currentNodes || groupByTags.size === 0) {
+      if (this._hullGroup) this._hullGroup.selectAll('*').remove();
+      return;
+    }
+
+    // Group nodes by tags
+    const groups = {};
+    for (const node of this._currentNodes) {
+      if (node.tags) {
+        for (const tag of node.tags) {
+          if (!groups[tag]) groups[tag] = [];
+          groups[tag].push(node);
+        }
+      }
+    }
+
+    // Filter to selected grouping tags
+    const hullData = [];
+    for (const [tag, tagNodes] of Object.entries(groups)) {
+      if (!groupByTags.has(tag)) continue;
+      const positioned = tagNodes.filter(n => n.x != null && n.y != null);
+      if (positioned.length >= 2) {
+        hullData.push({ tag, nodes: positioned });
+      }
+    }
+
+    const hullSel = this._hullGroup.selectAll('path')
+      .data(hullData, d => d.tag);
+
+    hullSel.exit().remove();
+
+    const hullEnter = hullSel.enter().append('path');
+    const hullMerge = hullEnter.merge(hullSel);
+
+    const self = this;
+    hullMerge
+      .attr('d', d => {
+        const padding = 30;
+        const points = d.nodes.map(n => [n.x, n.y]);
+        return self._computeHullPath(points, padding);
+      })
+      .attr('fill', d => {
+        const color = self._tagColorMap[d.tag] || '#3b82f6';
+        return color;
+      })
+      .attr('fill-opacity', 0.06)
+      .attr('stroke', d => {
+        const color = self._tagColorMap[d.tag] || '#3b82f6';
+        return color;
+      })
+      .attr('stroke-opacity', 0.25)
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4,4')
+      .style('pointer-events', 'none');
+  },
+
+  _computeHullPath(points, padding) {
+    if (points.length < 2) return '';
+
+    // Generate padding points around each node (Minkowski sum approach).
+    // This guarantees every node sits inside the hull with at least `padding` margin.
+    const expanded = [];
+    const steps = 8; // octagon around each point
+    for (const [px, py] of points) {
+      for (let i = 0; i < steps; i++) {
+        const angle = (2 * Math.PI * i) / steps;
+        expanded.push([px + Math.cos(angle) * padding, py + Math.sin(angle) * padding]);
+      }
+    }
+
+    // Convex hull of all expanded points
+    const hull = this._convexHull(expanded);
+    if (hull.length < 3) {
+      // Fallback for degenerate cases
+      const [a, b] = points;
+      const dx = (b[0] - a[0]) || 0;
+      const dy = (b[1] - a[1]) || 0;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = -dy / len * padding;
+      const ny = dx / len * padding;
+      return `M${a[0] + nx},${a[1] + ny}
+              L${b[0] + nx},${b[1] + ny}
+              A${padding},${padding} 0 0,1 ${b[0] - nx},${b[1] - ny}
+              L${a[0] - nx},${a[1] - ny}
+              A${padding},${padding} 0 0,1 ${a[0] + nx},${a[1] + ny}Z`;
+    }
+
+    // Smooth path using quadratic bezier through midpoints
+    const n = hull.length;
+    let path = `M${(hull[n - 1][0] + hull[0][0]) / 2},${(hull[n - 1][1] + hull[0][1]) / 2}`;
+    for (let i = 0; i < n; i++) {
+      const curr = hull[i];
+      const next = hull[(i + 1) % n];
+      const mx = (curr[0] + next[0]) / 2;
+      const my = (curr[1] + next[1]) / 2;
+      path += ` Q${curr[0]},${curr[1]} ${mx},${my}`;
+    }
+    path += 'Z';
+    return path;
+  },
+
+  _convexHull(points) {
+    const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (pts.length <= 2) return pts;
+
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    upper.pop();
+    lower.pop();
+    return lower.concat(upper);
   },
 
   updateStyles() {
@@ -557,6 +699,240 @@ const Graph = {
     }
   }
 };
+
+// ===== Graph Toolbar Controls =====
+let graphGroupListOpen = false;
+let graphFilterListOpen = false;
+
+function initGraphToolbar() {
+  // Group toggle
+  const groupToggle = document.getElementById('graph-group-toggle');
+  if (groupToggle) {
+    groupToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      graphGroupListOpen = !graphGroupListOpen;
+      graphFilterListOpen = false;
+      renderGraphToolbarLists();
+    });
+  }
+
+  // Filter toggle
+  const filterToggle = document.getElementById('graph-filter-toggle');
+  if (filterToggle) {
+    filterToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      graphFilterListOpen = !graphFilterListOpen;
+      graphGroupListOpen = false;
+      renderGraphToolbarLists();
+    });
+  }
+
+  // Prevent clicks inside lists from closing them
+  document.getElementById('graph-group-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('graph-filter-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
+}
+
+function renderGraphToolbarLists() {
+  renderGraphGroupTagList();
+  renderGraphFilterTagList();
+  renderGroupLegend();
+
+  // Update toggle active states
+  const groupToggle = document.getElementById('graph-group-toggle');
+  const filterToggle = document.getElementById('graph-filter-toggle');
+  if (groupToggle) {
+    groupToggle.classList.toggle('active', groupByTags.size > 0);
+    groupToggle.classList.toggle('open', graphGroupListOpen);
+  }
+  if (filterToggle) {
+    filterToggle.classList.toggle('active', activeTags.size > 0);
+    filterToggle.classList.toggle('open', graphFilterListOpen);
+  }
+
+  // Update badge counts
+  const groupCount = document.getElementById('graph-group-count');
+  const filterCount = document.getElementById('graph-filter-count');
+  if (groupCount) {
+    groupCount.textContent = groupByTags.size || '';
+    groupCount.style.display = groupByTags.size > 0 ? 'inline-block' : 'none';
+  }
+  if (filterCount) {
+    filterCount.textContent = activeTags.size || '';
+    filterCount.style.display = activeTags.size > 0 ? 'inline-block' : 'none';
+  }
+}
+
+function renderGraphGroupTagList() {
+  const tagList = document.getElementById('graph-group-tag-list');
+  if (!tagList) return;
+
+  tagList.classList.toggle('open', graphGroupListOpen);
+  if (!graphGroupListOpen) return;
+
+  const tagCounts = getTagCounts();
+  // Only tags with 2+ items, sorted by count descending
+  const sortedTags = Object.keys(tagCounts)
+    .filter(t => tagCounts[t] > 1)
+    .sort((a, b) => tagCounts[b] - tagCounts[a]);
+
+  // Build tag color map
+  sortedTags.forEach((tag, i) => {
+    if (!Graph._tagColorMap[tag]) {
+      Graph._tagColorMap[tag] = TAG_GROUP_COLORS[i % TAG_GROUP_COLORS.length];
+    }
+  });
+
+  const allSelected = sortedTags.length > 0 && sortedTags.every(t => groupByTags.has(t));
+
+  tagList.innerHTML = `<div class="graph-toolbar-list-actions">
+      <button class="graph-toolbar-action-btn" id="graph-group-select-all">${allSelected ? 'Clear all' : 'Select all'}</button>
+    </div>` +
+    sortedTags.map(tag => {
+      const isActive = groupByTags.has(tag);
+      const color = Graph._tagColorMap[tag] || '#3b82f6';
+      return `<div class="graph-group-tag-item${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">
+        <span class="graph-group-tag-swatch" style="background:${color}"></span>
+        <span class="graph-group-tag-name">${escapeHtml(tag)}</span>
+        <span class="graph-group-tag-count">${tagCounts[tag]}</span>
+      </div>`;
+    }).join('');
+
+  // Select all / clear all
+  document.getElementById('graph-group-select-all')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (allSelected) {
+      groupByTags.clear();
+    } else {
+      sortedTags.forEach(t => groupByTags.add(t));
+    }
+    renderGraphToolbarLists();
+    Graph.renderHulls();
+  });
+
+  tagList.querySelectorAll('.graph-group-tag-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tag = item.getAttribute('data-tag');
+      if (groupByTags.has(tag)) {
+        groupByTags.delete(tag);
+      } else {
+        groupByTags.add(tag);
+      }
+      renderGraphToolbarLists();
+      Graph.renderHulls();
+    });
+  });
+}
+
+function renderGraphFilterTagList() {
+  const tagList = document.getElementById('graph-filter-tag-list');
+  if (!tagList) return;
+
+  tagList.classList.toggle('open', graphFilterListOpen);
+  if (!graphFilterListOpen) return;
+
+  const tagCounts = getTagCounts();
+  const sortedTags = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+
+  const allSelected = sortedTags.length > 0 && sortedTags.every(t => activeTags.has(t));
+
+  tagList.innerHTML = `<div class="graph-toolbar-list-actions">
+      <button class="graph-toolbar-action-btn" id="graph-filter-select-all">${allSelected ? 'Clear all' : 'Select all'}</button>
+    </div>` +
+    sortedTags.map(tag => {
+      const isActive = activeTags.has(tag);
+      return `<div class="graph-group-tag-item${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">
+        <span class="graph-group-tag-swatch" style="background:${isActive ? '#3b82f6' : '#444'}"></span>
+        <span class="graph-group-tag-name">${escapeHtml(tag)}</span>
+        <span class="graph-group-tag-count">${tagCounts[tag]}</span>
+      </div>`;
+    }).join('');
+
+  document.getElementById('graph-filter-select-all')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (allSelected) {
+      activeTags.clear();
+    } else {
+      sortedTags.forEach(t => activeTags.add(t));
+    }
+    renderGraphToolbarLists();
+    applyFilters();
+  });
+
+  tagList.querySelectorAll('.graph-group-tag-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tag = item.getAttribute('data-tag');
+      if (activeTags.has(tag)) {
+        activeTags.delete(tag);
+      } else {
+        activeTags.add(tag);
+      }
+      renderGraphToolbarLists();
+      applyFilters();
+    });
+  });
+}
+
+// ===== Group Legend Table =====
+function renderGroupLegend() {
+  const legend = document.getElementById('graph-group-legend');
+  if (!legend) return;
+
+  if (groupByTags.size === 0) {
+    legend.classList.remove('visible');
+    legend.innerHTML = '';
+    return;
+  }
+
+  // Build data: for each active group tag, collect its ADRs from current filtered set
+  const { adrs } = getFilteredData();
+  const tagCounts = getTagCounts();
+  const groups = {};
+  for (const adr of adrs) {
+    if (adr.tags) {
+      for (const tag of adr.tags) {
+        if (groupByTags.has(tag)) {
+          if (!groups[tag]) groups[tag] = [];
+          groups[tag].push(adr);
+        }
+      }
+    }
+  }
+
+  // Sort by count descending
+  const sortedTags = [...groupByTags].sort((a, b) => (tagCounts[b] || 0) - (tagCounts[a] || 0));
+
+  const rows = sortedTags.map(tag => {
+    const tagAdrs = groups[tag] || [];
+    const color = Graph._tagColorMap[tag] || '#3b82f6';
+    const adrNames = tagAdrs.map(a => `#${a.id}`).join(', ');
+    return `<tr>
+      <td><div class="graph-group-legend-color">
+        <span class="graph-group-legend-swatch" style="background:${color}"></span>
+        <span class="graph-group-legend-tag">${escapeHtml(tag)}</span>
+      </div></td>
+      <td class="graph-group-legend-count">${tagAdrs.length}</td>
+      <td class="graph-group-legend-adrs" title="${escapeHtml(adrNames)}">${escapeHtml(adrNames)}</td>
+    </tr>`;
+  }).join('');
+
+  legend.innerHTML = `
+    <div class="graph-group-legend-header">
+      GROUPS <span>${sortedTags.length} tag${sortedTags.length !== 1 ? 's' : ''}</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>TAG</th>
+        <th style="text-align:right">COUNT</th>
+        <th>ADRs</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  legend.classList.add('visible');
+}
 
 // ===== Resizer Module =====
 const Resizer = {
@@ -621,23 +997,6 @@ function onSearchInput(e) {
   searchTimeout = setTimeout(applyFilters, 200);
 }
 
-function renderStatusChips() {
-  const container = document.getElementById('status-chips');
-  if (!container) return;
-  const statuses = ['proposed', 'accepted', 'deprecated', 'superseded'];
-  container.innerHTML = statuses.map(s => {
-    const isActive = activeStatuses.has(s);
-    return `<button class="status-chip${isActive ? ' active' : ''}" data-status="${s}"><span class="status-chip-dot ${s}"></span>${s.toUpperCase()}</button>`;
-  }).join('');
-  container.querySelectorAll('.status-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = btn.getAttribute('data-status');
-      if (activeStatuses.has(s)) { activeStatuses.delete(s); } else { activeStatuses.add(s); }
-      renderStatusChips();
-      applyFilters();
-    });
-  });
-}
 
 function applyFilters() {
   const { adrs, edges } = getFilteredData();
@@ -647,6 +1006,9 @@ function applyFilters() {
   }
   Timeline.render(adrs);
   Graph.render(adrs, edges);
+
+  // Keep graph toolbar badges in sync
+  renderGraphToolbarLists();
 
   // If selected ADR is no longer in filtered set, close preview
   if (selectedAdrId) {
@@ -664,7 +1026,7 @@ window.addEventListener('message', (event) => {
   if (msg.type === 'update') {
     allAdrs = msg.adrs || [];
     allEdges = msg.edges || [];
-    renderTagChips();
+    renderGraphToolbarLists();
     applyFilters();
   } else if (msg.type === 'focusNode') {
     Graph.focusNode(msg.adrId);
@@ -676,10 +1038,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('search-input');
   if (searchInput) searchInput.addEventListener('input', onSearchInput);
 
-  renderStatusChips();
-
   const graphContainer = document.getElementById('graph-container');
   if (graphContainer) Graph.init(graphContainer);
+
+  initGraphToolbar();
 
   Resizer.init();
 
@@ -694,6 +1056,15 @@ document.addEventListener('DOMContentLoaded', () => {
       Graph.updateStyles();
     });
   }
+
+  // Close dropdowns on outside click
+  document.addEventListener('click', () => {
+    if (graphGroupListOpen || graphFilterListOpen) {
+      graphGroupListOpen = false;
+      graphFilterListOpen = false;
+      renderGraphToolbarLists();
+    }
+  });
 
   vscode.postMessage({ type: 'ready' });
 });

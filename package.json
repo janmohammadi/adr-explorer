@@ -17,41 +17,20 @@
     "workspaceContains:**/docs/decisions/*.md"
   ],
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "adr-explorer",
-          "title": "ADR Explorer",
-          "icon": "resources/adr-icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "adr-explorer": [
-        {
-          "id": "adrExplorer.sidebarView",
-          "name": "ADR Explorer",
-          "type": "webview"
-        }
-      ]
-    },
     "commands": [
+      {
+        "command": "adrExplorer.open",
+        "title": "Open ADR Explorer",
+        "category": "ADR Explorer",
+        "icon": "$(layout)"
+      },
       {
         "command": "adrExplorer.refresh",
         "title": "Refresh",
         "category": "ADR Explorer",
         "icon": "$(refresh)"
       }
-    ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "adrExplorer.refresh",
-          "when": "view == adrExplorer.sidebarView",
-          "group": "navigation@1"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
