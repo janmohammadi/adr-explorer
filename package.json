@@ -29,24 +29,13 @@
     "views": {
       "adr-explorer": [
         {
-          "id": "adrExplorer.welcome",
-          "name": "ADR Explorer"
+          "id": "adrExplorer.sidebarView",
+          "name": "ADR Explorer",
+          "type": "webview"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "adrExplorer.welcome",
-        "contents": "Visualize your Architecture Decision Records.\n[Open Explorer](command:adrExplorer.openExplorerView)\n[Refresh](command:adrExplorer.refresh)"
-      }
-    ],
     "commands": [
-      {
-        "command": "adrExplorer.openExplorerView",
-        "title": "Open Explorer View",
-        "category": "ADR Explorer",
-        "icon": "$(layout)"
-      },
       {
         "command": "adrExplorer.refresh",
         "title": "Refresh",
@@ -57,14 +46,9 @@
     "menus": {
       "view/title": [
         {
-          "command": "adrExplorer.openExplorerView",
-          "when": "view == adrExplorer.welcome",
-          "group": "navigation@1"
-        },
-        {
           "command": "adrExplorer.refresh",
-          "when": "view == adrExplorer.welcome",
-          "group": "navigation@2"
+          "when": "view == adrExplorer.sidebarView",
+          "group": "navigation@1"
         }
       ]
     }

@@ -8,22 +8,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const explorerView = new ExplorerViewProvider(context.extensionUri, repository);
 
-  // Register an empty tree provider so the viewsWelcome content shows
-  vscode.window.registerTreeDataProvider('adrExplorer.welcome', {
-    getTreeItem: () => undefined as never,
-    getChildren: () => [],
-  });
-
   context.subscriptions.push(
-    vscode.commands.registerCommand('adrExplorer.openExplorerView', () => explorerView.show()),
+    vscode.window.registerWebviewViewProvider(
+      ExplorerViewProvider.sidebarViewType,
+      explorerView,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    ),
     vscode.commands.registerCommand('adrExplorer.refresh', async () => {
       await repository.initialize();
+      explorerView.sendData();
     }),
     repository,
   );
-
-  // Auto-open the explorer view on activation
-  explorerView.show();
 }
 
 export function deactivate() {}

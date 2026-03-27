@@ -2,16 +2,37 @@ import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
 import { getNonce } from './utils';
 
-export class ExplorerViewProvider {
+export class ExplorerViewProvider implements vscode.WebviewViewProvider {
+  public static readonly sidebarViewType = 'adrExplorer.sidebarView';
+
   private panel: vscode.WebviewPanel | undefined;
-  private disposables: vscode.Disposable[] = [];
+  private panelDisposables: vscode.Disposable[] = [];
 
   constructor(
     private extensionUri: vscode.Uri,
     private repository: AdrRepository
   ) {}
 
-  show(): void {
+  /** Called by VS Code when the sidebar view becomes visible. */
+  resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    _context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ): void {
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.html = this.getSidebarHtml(webviewView.webview);
+    webviewView.webview.onDidReceiveMessage(msg => {
+      if (msg.type === 'openPanel') {
+        this.showPanel();
+      }
+    });
+
+    // Auto-open the editor panel when the sidebar becomes visible
+    this.showPanel();
+  }
+
+  /** Opens or reveals the full explorer in an editor tab. */
+  showPanel(): void {
     if (this.panel) {
       this.panel.reveal();
       return;
@@ -31,22 +52,22 @@ export class ExplorerViewProvider {
       }
     );
 
-    this.panel.webview.html = this.getHtml(this.panel.webview);
+    this.panel.webview.html = this.getPanelHtml(this.panel.webview);
     this.panel.iconPath = new vscode.ThemeIcon('layout');
 
     this.panel.webview.onDidReceiveMessage(
       msg => this.handleMessage(msg),
       undefined,
-      this.disposables
+      this.panelDisposables
     );
 
     const changeListener = this.repository.onDidChange(() => this.sendData());
-    this.disposables.push(changeListener);
+    this.panelDisposables.push(changeListener);
 
     this.panel.onDidDispose(() => {
       this.panel = undefined;
-      this.disposables.forEach(d => d.dispose());
-      this.disposables = [];
+      this.panelDisposables.forEach(d => d.dispose());
+      this.panelDisposables = [];
     });
   }
 
@@ -66,7 +87,7 @@ export class ExplorerViewProvider {
     }
   }
 
-  private sendData(): void {
+  sendData(): void {
     this.panel?.webview.postMessage({
       type: 'update',
       adrs: this.repository.getAllAdrs(),
@@ -74,7 +95,38 @@ export class ExplorerViewProvider {
     });
   }
 
-  private getHtml(webview: vscode.Webview): string {
+  private getSidebarHtml(_webview: vscode.Webview): string {
+    const nonce = getNonce();
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <style>
+    body { padding: 12px; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
+    .info { opacity: 0.7; font-size: 12px; margin-bottom: 12px; }
+    button {
+      display: block; width: 100%; padding: 6px 12px;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+      border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+  </style>
+</head>
+<body>
+  <p class="info">ADR Explorer is open in the editor.</p>
+  <button id="open-btn">Open ADR Explorer</button>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    document.getElementById('open-btn').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openPanel' });
+    });
+  </script>
+</body>
+</html>`;
+  }
+
+  private getPanelHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
     const explorerJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'dist', 'explorer.js')
