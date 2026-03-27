@@ -5,7 +5,7 @@ date: 2025-12-10
 deciders: ["Reza Janmohammadi"]
 supersedes: []
 amends: []
-relates-to: []
+relates-to: ["0008-cicd-pipeline-containerization-strategy"]
 tags: ["security", "infrastructure", "azure", "compliance"]
 ---
 

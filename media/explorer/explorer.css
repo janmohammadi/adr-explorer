@@ -159,10 +159,10 @@ body.resizing .resize-handle {
 /* ===== Timeline Panel ===== */
 .timeline-panel {
   width: 260px;
-  min-width: 200px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-dark);
+  background-color: var(--bg-dark);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -259,7 +259,7 @@ body.resizing .resize-handle {
 /* Dashed vertical line */
 .timeline-line {
   position: absolute;
-  left: 56px;
+  left: 50px;
   top: 0;
   bottom: 0;
   width: 0;
@@ -267,16 +267,16 @@ body.resizing .resize-handle {
 }
 
 .timeline-entries {
-  padding: 16px 0;
+  padding: 8px 0;
 }
 
 /* ===== Timeline Entry ===== */
 .timeline-entry {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0;
-  padding: 12px 0;
+  padding: 6px 0;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -296,17 +296,16 @@ body.resizing .resize-handle {
 .entry-number {
   width: 40px;
   text-align: right;
-  padding-right: 16px;
+  padding-right: 8px;
   font-size: 10px;
   font-family: var(--font-mono);
   color: #444;
-  margin-top: 6px;
   user-select: none;
   flex-shrink: 0;
 }
 
 .entry-dot-container {
-  width: 32px;
+  width: 20px;
   display: flex;
   justify-content: center;
   flex-shrink: 0;
@@ -315,10 +314,9 @@ body.resizing .resize-handle {
 }
 
 .entry-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  margin-top: 6px;
   border: 2px solid var(--bg-dark);
   transition: transform 0.3s, box-shadow 0.3s;
 }
@@ -377,11 +375,9 @@ body.resizing .resize-handle {
 
 .entry-content {
   flex: 1;
-  padding-left: 24px;
-  padding-right: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  padding-left: 8px;
+  padding-right: 8px;
+  min-width: 0;
 }
 
 .entry-header {
@@ -456,7 +452,7 @@ body.resizing .resize-handle {
   min-width: 200px;
   position: relative;
   overflow: hidden;
-  background: var(--panel-dark);
+  background-color: var(--panel-dark);
 }
 
 .graph-label {

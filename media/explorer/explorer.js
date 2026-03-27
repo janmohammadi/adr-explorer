@@ -217,30 +217,20 @@ const Timeline = {
       return;
     }
 
-    const sorted = [...adrs].sort((a, b) => b.date.localeCompare(a.date));
+    const sorted = [...adrs].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
 
-    container.innerHTML = sorted.map((adr, index) => {
-      const tagsHtml = (adr.tags || []).map(t =>
-        `<span class="meta-tag">"${escapeHtml(t)}"</span>`
-      ).join(' ');
+    container.innerHTML = sorted.map((adr) => {
       const isSelected = adr.id === selectedAdrId;
       const statusClass = (adr.status === 'superseded' || adr.status === 'deprecated') ? ` status-${adr.status}` : '';
 
       return `
-        <div class="timeline-entry${isSelected ? ' selected' : ''}${statusClass}" data-adr-id="${escapeHtml(adr.id)}">
-          <div class="entry-number">${(index + 1).toString().padStart(2, '0')}</div>
+        <div class="timeline-entry${isSelected ? ' selected' : ''}${statusClass}" data-adr-id="${escapeHtml(adr.id)}" title="${escapeHtml(adr.status.toUpperCase())} — #${escapeHtml(adr.id)} ${escapeHtml(adr.title)}">
+          <div class="entry-number">${escapeHtml(adr.id.replace(/^ADR-/i, ''))}</div>
           <div class="entry-dot-container">
             <div class="entry-dot ${adr.status}"></div>
           </div>
           <div class="entry-content">
-            <div class="entry-header">
-              <span class="entry-id">#${escapeHtml(adr.id)}</span>
-              <span class="entry-title">${escapeHtml(adr.title)}</span>
-            </div>
-            <div class="entry-meta">
-              <span><span class="meta-label">date:</span> <span class="meta-value">${escapeHtml(adr.date)}</span></span>
-              ${tagsHtml ? `<span><span class="meta-label">tags:</span> ${tagsHtml}</span>` : ''}
-            </div>
+            <span class="entry-title">${escapeHtml(adr.title)}</span>
           </div>
         </div>
       `;
@@ -305,7 +295,7 @@ const Graph = {
         .attr('markerHeight', 6)
         .attr('orient', 'auto')
         .append('path')
-        .attr('fill', id === 'arrow-selected' ? '#fff' : '#666')
+        .attr('fill', id === 'arrow-selected' ? '#fff' : '#888')
         .attr('d', 'M0,-5L10,0L0,5');
     });
 
@@ -409,10 +399,10 @@ const Graph = {
       .data(links)
       .join('line')
       .attr('class', 'adr-link')
-      .attr('stroke', '#444')
-      .attr('stroke-opacity', 0.4)
-      .attr('stroke-width', 1)
-      .attr('stroke-dasharray', '5,5')
+      .attr('stroke', '#888')
+      .attr('stroke-opacity', 1)
+      .attr('stroke-width', 1.5)
+      .attr('stroke-dasharray', '6,4')
       .attr('marker-end', 'url(#arrow-default)');
 
     // Link labels
@@ -459,8 +449,6 @@ const Graph = {
         })
         .on('end', (event) => {
           if (!event.active) simulation.alphaTarget(0);
-          event.subject.fx = null;
-          event.subject.fy = null;
         })
       );
 
@@ -657,9 +645,9 @@ const Graph = {
         const isActive = d.source.id === selectedId || d.target.id === selectedId ||
                          d.source.id === hoveredId || d.target.id === hoveredId;
         const el = select(this);
-        el.attr('stroke', isActive ? '#fff' : '#444')
-          .attr('stroke-opacity', isActive ? 1 : 0.4)
-          .attr('stroke-width', isActive ? 2 : 1)
+        el.attr('stroke', isActive ? '#fff' : '#888')
+          .attr('stroke-opacity', isActive ? 1 : 1)
+          .attr('stroke-width', isActive ? 2.5 : 2)
           .attr('marker-end', isActive ? 'url(#arrow-selected)' : 'url(#arrow-default)')
           .style('animation', isActive ? 'dash 1s linear infinite' : 'none');
       });

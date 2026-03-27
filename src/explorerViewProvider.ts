@@ -121,17 +121,11 @@ export class ExplorerViewProvider {
     <!-- Main Content -->
     <div class="main">
       <!-- Left Panel: Timeline -->
-      <div class="timeline-panel grid-background">
+      <div class="timeline-panel">
         <div class="timeline-header">
           <div class="timeline-label">
             <div class="label-icon"><div class="label-icon-dot"></div></div>
             ADR Timeline
-          </div>
-          <div class="timeline-legend">
-            <div class="legend-item"><div class="legend-dot proposed"></div><span>PROPOSED</span></div>
-            <div class="legend-item"><div class="legend-dot accepted"></div><span>ACCEPTED</span></div>
-            <div class="legend-item"><div class="legend-dot deprecated"></div><span>DEPRECATED</span></div>
-            <div class="legend-item"><div class="legend-dot superseded"></div><span>SUPERSEDED</span></div>
           </div>
         </div>
         <div class="timeline-content">

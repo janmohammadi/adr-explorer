@@ -5,7 +5,7 @@ date: 2025-01-17
 deciders: ["Development Team"]
 supersedes: []
 amends: []
-relates-to: []
+relates-to: ["0009-azure-front-door-for-edge-security"]
 tags: ["cicd", "devops", "containers", "security", "infrastructure"]
 ---
 

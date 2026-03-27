@@ -5,7 +5,7 @@ date: 2025-01-14
 deciders: ["Reza Janmohammadi"]
 supersedes: []
 amends: []
-relates-to: []
+relates-to: ["0006-unified-officejs-plugin-architecture"]
 tags: ["auth", "security", "entraid", "backend"]
 ---
 
