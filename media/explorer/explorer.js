@@ -58,6 +58,8 @@ mermaid.default.initialize({
 // ===== State =====
 let allAdrs = [];
 let allEdges = [];
+let healthReport = null;
+let allTensions = [];
 let searchQuery = '';
 let activeStatuses = new Set();
 let activeTags = new Set();
@@ -95,6 +97,44 @@ function getTagCounts() {
   return tagCounts;
 }
 
+// ===== Impact Ripple Analysis =====
+let impactRadius = 2; // default: 2-hop
+
+function computeImpactMap(adrId, edges, maxHops) {
+  const impact = new Map(); // adrId -> { depth, weight }
+  if (!adrId) return impact;
+
+  const edgeWeights = { 'supersedes': 1.0, 'amends': 0.7, 'relates-to': 0.4 };
+  const adjacency = {};
+  for (const edge of edges) {
+    const s = typeof edge.source === 'object' ? edge.source.id : edge.source;
+    const t = typeof edge.target === 'object' ? edge.target.id : edge.target;
+    if (!adjacency[s]) adjacency[s] = [];
+    if (!adjacency[t]) adjacency[t] = [];
+    adjacency[s].push({ neighbor: t, weight: edgeWeights[edge.type] || 0.4 });
+    adjacency[t].push({ neighbor: s, weight: edgeWeights[edge.type] || 0.4 });
+  }
+
+  // BFS with depth tracking
+  const queue = [{ id: adrId, depth: 0, weight: 1.0 }];
+  impact.set(adrId, { depth: 0, weight: 1.0 });
+
+  while (queue.length > 0) {
+    const { id, depth, weight } = queue.shift();
+    if (depth >= maxHops) continue;
+    const neighbors = adjacency[id] || [];
+    for (const { neighbor, weight: edgeWeight } of neighbors) {
+      if (!impact.has(neighbor)) {
+        const newWeight = weight * edgeWeight * 0.7; // decay
+        impact.set(neighbor, { depth: depth + 1, weight: newWeight });
+        queue.push({ id: neighbor, depth: depth + 1, weight: newWeight });
+      }
+    }
+  }
+
+  return impact;
+}
+
 function selectAdr(adrId) {
   if (selectedAdrId === adrId) {
     selectedAdrId = null;
@@ -109,6 +149,12 @@ function selectAdr(adrId) {
   Timeline.updateSelection(selectedAdrId);
   Graph._selectedNodeId = selectedAdrId;
   Graph.updateStyles();
+
+  // Show/hide impact radius control
+  const impactControl = document.getElementById('impact-radius-control');
+  if (impactControl) {
+    impactControl.style.display = selectedAdrId ? 'flex' : 'none';
+  }
 }
 
 // ===== Preview Module =====
@@ -150,6 +196,24 @@ const Preview = {
           </div>
         ` : ''}
         ${tagsHtml ? `<div class="preview-meta-item">${tagsHtml}</div>` : ''}
+        ${adr.reviewBy ? `
+          <div class="preview-meta-item">
+            <span class="preview-meta-label">review by:</span>
+            <span class="preview-meta-value ${adr.reviewStatus === 'overdue' ? 'meta-overdue' : adr.reviewStatus === 'due-soon' ? 'meta-due-soon' : ''}">${escapeHtml(adr.reviewBy)}</span>
+          </div>
+        ` : ''}
+        ${adr.expires ? `
+          <div class="preview-meta-item">
+            <span class="preview-meta-label">expires:</span>
+            <span class="preview-meta-value ${adr.reviewStatus === 'expired' ? 'meta-expired' : ''}">${escapeHtml(adr.expires)}</span>
+          </div>
+        ` : ''}
+        ${adr.confidence ? `
+          <div class="preview-meta-item">
+            <span class="preview-meta-label">confidence:</span>
+            <span class="preview-meta-value conf-${adr.confidence}">${escapeHtml(adr.confidence)}</span>
+          </div>
+        ` : ''}
       `;
     }
 
@@ -223,6 +287,15 @@ const Timeline = {
       const isSelected = adr.id === selectedAdrId;
       const statusClass = (adr.status === 'superseded' || adr.status === 'deprecated') ? ` status-${adr.status}` : '';
 
+      let badge = '';
+      if (adr.reviewStatus === 'expired') badge = '<span class="review-badge badge-expired" title="Expired">EXP</span>';
+      else if (adr.reviewStatus === 'overdue') badge = '<span class="review-badge badge-overdue" title="Review overdue">DUE</span>';
+      else if (adr.reviewStatus === 'due-soon') badge = '<span class="review-badge badge-due-soon" title="Review due soon">SOON</span>';
+
+      let confBadge = '';
+      if (adr.confidence === 'low') confBadge = '<span class="confidence-badge conf-low" title="Low confidence">LOW</span>';
+      else if (adr.confidence === 'medium') confBadge = '<span class="confidence-badge conf-medium" title="Medium confidence">MED</span>';
+
       return `
         <div class="timeline-entry${isSelected ? ' selected' : ''}${statusClass}" data-adr-id="${escapeHtml(adr.id)}" title="${escapeHtml(adr.status.toUpperCase())} — #${escapeHtml(adr.id)} ${escapeHtml(adr.title)}">
           <div class="entry-number">${escapeHtml(adr.id.replace(/^ADR-/i, ''))}</div>
@@ -231,6 +304,7 @@ const Timeline = {
           </div>
           <div class="entry-content">
             <span class="entry-title">${escapeHtml(adr.title)}</span>
+            ${badge}${confBadge}
           </div>
         </div>
       `;
@@ -399,10 +473,10 @@ const Graph = {
       .data(links)
       .join('line')
       .attr('class', 'adr-link')
-      .attr('stroke', '#888')
-      .attr('stroke-opacity', 1)
+      .attr('stroke', d => d._isGhost ? '#60a5fa' : '#888')
+      .attr('stroke-opacity', d => d._isGhost ? 0.6 : 1)
       .attr('stroke-width', 1.5)
-      .attr('stroke-dasharray', '6,4')
+      .attr('stroke-dasharray', d => d._isGhost ? '3,3' : '6,4')
       .attr('marker-end', 'url(#arrow-default)');
 
     // Link labels
@@ -459,10 +533,11 @@ const Graph = {
 
     // Node circles
     this._nodeSel.append('circle')
-      .attr('r', 14)
-      .attr('fill', d => getStatusColor(d.status))
-      .attr('stroke', '#1a1b1e')
-      .attr('stroke-width', 2)
+      .attr('r', d => d._isGhost ? 18 : 14)
+      .attr('fill', d => d._isGhost ? 'rgba(96,165,250,0.15)' : getStatusColor(d.status))
+      .attr('stroke', d => d._isGhost ? '#60a5fa' : '#1a1b1e')
+      .attr('stroke-width', d => d._isGhost ? 2 : 2)
+      .attr('stroke-dasharray', d => d._isGhost ? '4,3' : 'none')
       .style('transition', 'stroke 0.2s, stroke-width 0.2s, filter 0.2s');
 
     // Node ID text (inside circle)
@@ -640,16 +715,43 @@ const Graph = {
     const selectedId = this._selectedNodeId;
     const hoveredId = this._hoveredNodeId;
 
+    // Compute impact map when a node is selected
+    const impactMap = selectedId
+      ? computeImpactMap(selectedId, this._linkSel ? this._linkSel.data() : [], impactRadius)
+      : new Map();
+    const hasImpact = impactMap.size > 1; // >1 because it includes the selected node itself
+
     if (this._linkSel) {
       this._linkSel.each(function (d) {
-        const isActive = d.source.id === selectedId || d.target.id === selectedId ||
-                         d.source.id === hoveredId || d.target.id === hoveredId;
+        const srcId = typeof d.source === 'object' ? d.source.id : d.source;
+        const tgtId = typeof d.target === 'object' ? d.target.id : d.target;
+        const isDirectActive = srcId === selectedId || tgtId === selectedId ||
+                         srcId === hoveredId || tgtId === hoveredId;
+        // Ripple: edge connects two impacted nodes
+        const isRipple = hasImpact && impactMap.has(srcId) && impactMap.has(tgtId);
+
         const el = select(this);
-        el.attr('stroke', isActive ? '#fff' : '#888')
-          .attr('stroke-opacity', isActive ? 1 : 1)
-          .attr('stroke-width', isActive ? 2.5 : 2)
-          .attr('marker-end', isActive ? 'url(#arrow-selected)' : 'url(#arrow-default)')
-          .style('animation', isActive ? 'dash 1s linear infinite' : 'none');
+        if (isDirectActive) {
+          el.attr('stroke', '#fff')
+            .attr('stroke-opacity', 1)
+            .attr('stroke-width', 2.5)
+            .attr('marker-end', 'url(#arrow-selected)')
+            .style('animation', 'dash 1s linear infinite');
+        } else if (isRipple) {
+          const maxDepth = Math.max(impactMap.get(srcId).depth, impactMap.get(tgtId).depth);
+          const rippleOpacity = Math.max(0.2, 1 - maxDepth * 0.3);
+          el.attr('stroke', '#60a5fa')
+            .attr('stroke-opacity', rippleOpacity)
+            .attr('stroke-width', 2)
+            .attr('marker-end', 'url(#arrow-default)')
+            .style('animation', 'dash 2s linear infinite');
+        } else {
+          el.attr('stroke', '#888')
+            .attr('stroke-opacity', hasImpact ? 0.15 : 1)
+            .attr('stroke-width', 1.5)
+            .attr('marker-end', 'url(#arrow-default)')
+            .style('animation', 'none');
+        }
       });
     }
 
@@ -657,12 +759,39 @@ const Graph = {
       this._nodeSel.each(function (d) {
         const isFocused = d.id === selectedId || d.id === hoveredId;
         const isDimmed = d.status === 'superseded' || d.status === 'deprecated';
-        select(this)
-          .style('opacity', isFocused ? 1 : (isDimmed ? 0.4 : 1));
-        select(this).select('circle')
-          .attr('stroke', isFocused ? '#fff' : '#1a1b1e')
-          .attr('stroke-width', isFocused ? 3 : 2)
-          .style('filter', isFocused ? 'drop-shadow(0 0 8px rgba(255,255,255,0.4))' : 'none');
+        const impactInfo = impactMap.get(d.id);
+        const isImpacted = impactInfo && impactInfo.depth > 0;
+
+        let opacity;
+        if (isFocused) {
+          opacity = 1;
+        } else if (hasImpact) {
+          if (isImpacted) {
+            opacity = Math.max(0.4, 1 - impactInfo.depth * 0.25);
+          } else {
+            opacity = 0.12;
+          }
+        } else {
+          opacity = isDimmed ? 0.4 : 1;
+        }
+
+        select(this).style('opacity', opacity);
+
+        const circle = select(this).select('circle');
+        if (isFocused) {
+          circle.attr('stroke', '#fff')
+            .attr('stroke-width', 3)
+            .style('filter', 'drop-shadow(0 0 8px rgba(255,255,255,0.4))');
+        } else if (isImpacted) {
+          const glowIntensity = Math.max(0.1, 0.4 - impactInfo.depth * 0.1);
+          circle.attr('stroke', '#60a5fa')
+            .attr('stroke-width', 2.5)
+            .style('filter', `drop-shadow(0 0 ${6 - impactInfo.depth}px rgba(96,165,250,${glowIntensity}))`);
+        } else {
+          circle.attr('stroke', '#1a1b1e')
+            .attr('stroke-width', 2)
+            .style('filter', 'none');
+        }
       });
     }
   },
@@ -691,6 +820,7 @@ const Graph = {
 // ===== Graph Toolbar Controls =====
 let graphGroupListOpen = false;
 let graphFilterListOpen = false;
+let graphTensionsListOpen = false;
 
 function initGraphToolbar() {
   // Group toggle
@@ -700,6 +830,7 @@ function initGraphToolbar() {
       e.stopPropagation();
       graphGroupListOpen = !graphGroupListOpen;
       graphFilterListOpen = false;
+      graphTensionsListOpen = false;
       renderGraphToolbarLists();
     });
   }
@@ -711,6 +842,19 @@ function initGraphToolbar() {
       e.stopPropagation();
       graphFilterListOpen = !graphFilterListOpen;
       graphGroupListOpen = false;
+      graphTensionsListOpen = false;
+      renderGraphToolbarLists();
+    });
+  }
+
+  // Tensions toggle
+  const tensionsToggle = document.getElementById('graph-tensions-toggle');
+  if (tensionsToggle) {
+    tensionsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      graphTensionsListOpen = !graphTensionsListOpen;
+      graphGroupListOpen = false;
+      graphFilterListOpen = false;
       renderGraphToolbarLists();
     });
   }
@@ -718,16 +862,19 @@ function initGraphToolbar() {
   // Prevent clicks inside lists from closing them
   document.getElementById('graph-group-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('graph-filter-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('graph-tensions-list')?.addEventListener('click', (e) => e.stopPropagation());
 }
 
 function renderGraphToolbarLists() {
   renderGraphGroupTagList();
   renderGraphFilterTagList();
+  renderTensionsList();
   renderGroupLegend();
 
   // Update toggle active states
   const groupToggle = document.getElementById('graph-group-toggle');
   const filterToggle = document.getElementById('graph-filter-toggle');
+  const tensionsToggle = document.getElementById('graph-tensions-toggle');
   if (groupToggle) {
     groupToggle.classList.toggle('active', groupByTags.size > 0);
     groupToggle.classList.toggle('open', graphGroupListOpen);
@@ -736,10 +883,15 @@ function renderGraphToolbarLists() {
     filterToggle.classList.toggle('active', activeTags.size > 0);
     filterToggle.classList.toggle('open', graphFilterListOpen);
   }
+  if (tensionsToggle) {
+    tensionsToggle.classList.toggle('active', allTensions.length > 0);
+    tensionsToggle.classList.toggle('open', graphTensionsListOpen);
+  }
 
   // Update badge counts
   const groupCount = document.getElementById('graph-group-count');
   const filterCount = document.getElementById('graph-filter-count');
+  const tensionsCount = document.getElementById('graph-tensions-count');
   if (groupCount) {
     groupCount.textContent = groupByTags.size || '';
     groupCount.style.display = groupByTags.size > 0 ? 'inline-block' : 'none';
@@ -747,6 +899,10 @@ function renderGraphToolbarLists() {
   if (filterCount) {
     filterCount.textContent = activeTags.size || '';
     filterCount.style.display = activeTags.size > 0 ? 'inline-block' : 'none';
+  }
+  if (tensionsCount) {
+    tensionsCount.textContent = allTensions.length || '';
+    tensionsCount.style.display = allTensions.length > 0 ? 'inline-block' : 'none';
   }
 }
 
@@ -858,6 +1014,49 @@ function renderGraphFilterTagList() {
       }
       renderGraphToolbarLists();
       applyFilters();
+    });
+  });
+}
+
+// ===== Tensions List =====
+function renderTensionsList() {
+  const listEl = document.getElementById('graph-tensions-list');
+  if (!listEl) return;
+
+  listEl.classList.toggle('open', graphTensionsListOpen);
+  if (!graphTensionsListOpen) return;
+
+  if (allTensions.length === 0) {
+    listEl.innerHTML = '<div class="tensions-empty">No tensions detected</div>';
+    return;
+  }
+
+  const severityOrder = { high: 0, medium: 1, low: 2 };
+  const sorted = [...allTensions].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+  listEl.innerHTML = sorted.map(tension => {
+    const severityIcon = tension.severity === 'high' ? '!!' : tension.severity === 'medium' ? '!' : 'i';
+    const adrLinks = tension.adrIds.map(id =>
+      `<span class="tension-adr-link" data-adr-id="${escapeHtml(id)}">${escapeHtml(id)}</span>`
+    ).join(' ');
+    return `
+      <div class="tension-item severity-${tension.severity}">
+        <div class="tension-icon">${severityIcon}</div>
+        <div class="tension-content">
+          <div class="tension-title">${escapeHtml(tension.title)}</div>
+          <div class="tension-desc">${escapeHtml(tension.description)}</div>
+          <div class="tension-adrs">${adrLinks}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Click handlers for ADR links
+  listEl.querySelectorAll('.tension-adr-link').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const adrId = el.getAttribute('data-adr-id');
+      if (adrId) Graph.focusNode(adrId);
     });
   });
 }
@@ -987,13 +1186,16 @@ function onSearchInput(e) {
 
 
 function applyFilters() {
-  const { adrs, edges } = getFilteredData();
+  const filtered = getFilteredData();
+  // Augment with ghost node if What-If is active
+  const { adrs, edges } = WhatIf.getAugmentedData(filtered.adrs, filtered.edges);
   const countEl = document.getElementById('record-count');
   if (countEl) {
-    countEl.textContent = `${adrs.length} of ${allAdrs.length} records`;
+    const realCount = filtered.adrs.length;
+    countEl.textContent = `${realCount} of ${allAdrs.length} records` + (WhatIf._active ? ' (+1 what-if)' : '');
   }
-  Timeline.render(adrs);
-  Graph.render(adrs, edges);
+  Timeline.render(filtered.adrs); // Timeline shows only real ADRs
+  Graph.render(adrs, edges); // Graph includes ghost
 
   // Keep graph toolbar badges in sync
   renderGraphToolbarLists();
@@ -1008,16 +1210,501 @@ function applyFilters() {
   }
 }
 
+// ===== AI Assistant Module =====
+const AiAssistant = {
+  _visible: false,
+
+  init() {
+    const toggle = document.getElementById('ai-toggle');
+    const close = document.getElementById('ai-panel-close');
+    if (toggle) toggle.addEventListener('click', () => {
+      this._visible = !this._visible;
+      this._updateVisibility();
+    });
+    if (close) close.addEventListener('click', () => {
+      this._visible = false;
+      this._updateVisibility();
+    });
+
+    // Action buttons
+    document.getElementById('ai-gap-analysis')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'aiGapAnalysis' });
+      this._showLoading();
+    });
+
+    document.getElementById('ai-cluster-summary')?.addEventListener('click', () => {
+      // Use currently filtered ADR IDs
+      const { adrs } = getFilteredData();
+      const ids = adrs.map(a => a.id);
+      vscode.postMessage({ type: 'aiClusterSummary', adrIds: ids });
+      this._showLoading();
+    });
+
+    document.getElementById('ai-stakeholder-brief')?.addEventListener('click', () => {
+      if (selectedAdrId) {
+        vscode.postMessage({ type: 'aiStakeholderBrief', adrIds: [selectedAdrId] });
+        this._showLoading();
+      } else {
+        this._showResult('Select an ADR first to generate a stakeholder brief.');
+      }
+    });
+
+    document.getElementById('ai-generate-draft')?.addEventListener('click', () => {
+      const input = document.getElementById('ai-draft-input');
+      const description = input?.value || '';
+      if (description.trim()) {
+        vscode.postMessage({ type: 'aiGenerateDraft', description });
+        this._showLoading();
+      }
+    });
+
+    // Enter key on draft input
+    document.getElementById('ai-draft-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('ai-generate-draft')?.click();
+      }
+    });
+  },
+
+  _updateVisibility() {
+    const panel = document.getElementById('ai-panel');
+    if (panel) panel.style.display = this._visible ? 'flex' : 'none';
+    const toggle = document.getElementById('ai-toggle');
+    if (toggle) toggle.classList.toggle('active', this._visible);
+  },
+
+  _showLoading() {
+    const result = document.getElementById('ai-result');
+    if (result) result.innerHTML = '<div class="ai-loading">Thinking...</div>';
+  },
+
+  _showResult(content) {
+    const result = document.getElementById('ai-result');
+    if (result) {
+      // Simple markdown-to-html: convert **bold**, headings, lists, newlines
+      const html = escapeHtml(content)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
+        .replace(/^\d+\. (.*?)$/gm, '<li>$1</li>')
+        .replace(/^- (.*?)$/gm, '<li>$1</li>')
+        .replace(/\n/g, '<br>');
+      result.innerHTML = `<div class="ai-result-content">${html}</div>`;
+    }
+  },
+
+  handleResult(content) {
+    this._showResult(content);
+  }
+};
+
+// ===== What-If Scenario Module =====
+const WhatIf = {
+  _active: false,
+  _ghostAdr: null,
+
+  init() {
+    const toggle = document.getElementById('whatif-toggle');
+    const close = document.getElementById('whatif-close');
+    const apply = document.getElementById('whatif-apply');
+    const discard = document.getElementById('whatif-discard');
+    const save = document.getElementById('whatif-save');
+
+    if (toggle) toggle.addEventListener('click', () => this._showModal());
+    if (close) close.addEventListener('click', () => this._hideModal());
+    if (apply) apply.addEventListener('click', () => this._apply());
+    if (discard) discard.addEventListener('click', () => this._discard());
+    if (save) save.addEventListener('click', () => this._saveDraft());
+  },
+
+  _showModal() {
+    const modal = document.getElementById('whatif-modal');
+    if (modal) modal.style.display = 'flex';
+  },
+
+  _hideModal() {
+    const modal = document.getElementById('whatif-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  _apply() {
+    const title = document.getElementById('whatif-title')?.value || 'Untitled Decision';
+    const status = document.getElementById('whatif-status')?.value || 'proposed';
+    const tagsRaw = document.getElementById('whatif-tags')?.value || '';
+    const supersedesRaw = document.getElementById('whatif-supersedes')?.value || '';
+    const relatesRaw = document.getElementById('whatif-relates')?.value || '';
+
+    const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const supersedes = supersedesRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const relatesTo = relatesRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+    // Create ghost ADR with a special ID
+    const ghostId = 'ADR-GHOST';
+    this._ghostAdr = {
+      id: ghostId,
+      number: 9999,
+      title,
+      status,
+      date: new Date().toISOString().slice(0, 10),
+      deciders: [],
+      supersedes,
+      amends: [],
+      relatesTo,
+      tags,
+      filePath: '',
+      content: '',
+      _isGhost: true,
+    };
+
+    this._active = true;
+    this._hideModal();
+
+    // Show save button
+    const saveBtn = document.getElementById('whatif-save');
+    if (saveBtn) saveBtn.style.display = '';
+
+    // Re-render with ghost node
+    applyFilters();
+  },
+
+  _discard() {
+    this._ghostAdr = null;
+    this._active = false;
+    this._hideModal();
+    this._clearForm();
+
+    const saveBtn = document.getElementById('whatif-save');
+    if (saveBtn) saveBtn.style.display = 'none';
+
+    applyFilters();
+  },
+
+  _clearForm() {
+    ['whatif-title', 'whatif-tags', 'whatif-supersedes', 'whatif-relates'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const status = document.getElementById('whatif-status');
+    if (status) status.value = 'proposed';
+  },
+
+  _saveDraft() {
+    if (!this._ghostAdr) return;
+    // Build frontmatter content and ask extension to create file
+    const adr = this._ghostAdr;
+    const content = `---
+title: "${adr.title}"
+status: ${adr.status}
+date: ${adr.date}
+deciders: []
+supersedes: [${adr.supersedes.map(s => `"${s}"`).join(', ')}]
+amends: []
+relates-to: [${adr.relatesTo.map(r => `"${r}"`).join(', ')}]
+tags: [${adr.tags.map(t => `"${t}"`).join(', ')}]
+---
+
+# ${adr.title}
+
+## Context
+
+<!-- Describe the context and problem statement -->
+
+## Decision
+
+<!-- Describe the decision that was made -->
+
+## Consequences
+
+<!-- Describe the consequences of the decision -->
+`;
+    vscode.postMessage({ type: 'saveDraft', content });
+    this._discard();
+  },
+
+  getAugmentedData(adrs, edges) {
+    if (!this._active || !this._ghostAdr) return { adrs, edges };
+
+    const augAdrs = [...adrs, this._ghostAdr];
+    const augEdges = [...edges];
+    const allIds = new Set(augAdrs.map(a => a.id));
+
+    // Add ghost edges
+    for (const target of this._ghostAdr.supersedes) {
+      if (allIds.has(target)) {
+        augEdges.push({ source: this._ghostAdr.id, target, type: 'supersedes', _isGhost: true });
+      }
+    }
+    for (const target of this._ghostAdr.relatesTo) {
+      if (allIds.has(target)) {
+        augEdges.push({ source: this._ghostAdr.id, target, type: 'relates-to', _isGhost: true });
+      }
+    }
+
+    return { adrs: augAdrs, edges: augEdges };
+  }
+};
+
+// ===== Analytics Module =====
+const Analytics = {
+  _visible: false,
+  _lifecycle: null,
+
+  init() {
+    const toggle = document.getElementById('analytics-toggle');
+    const close = document.getElementById('analytics-close');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        this._visible = !this._visible;
+        this._updateVisibility();
+        if (this._visible && this._lifecycle) this.render(this._lifecycle);
+      });
+    }
+    if (close) {
+      close.addEventListener('click', () => {
+        this._visible = false;
+        this._updateVisibility();
+      });
+    }
+  },
+
+  _updateVisibility() {
+    const panel = document.getElementById('analytics-panel');
+    if (panel) panel.style.display = this._visible ? 'flex' : 'none';
+    const toggle = document.getElementById('analytics-toggle');
+    if (toggle) toggle.classList.toggle('active', this._visible);
+  },
+
+  update(lifecycle) {
+    this._lifecycle = lifecycle;
+    if (this._visible) this.render(lifecycle);
+  },
+
+  render(lifecycle) {
+    if (!lifecycle) return;
+    this._renderVelocity(lifecycle.velocity);
+    this._renderFunnel(lifecycle.funnel);
+    this._renderStability(lifecycle.tagStability);
+  },
+
+  _renderVelocity(velocity) {
+    const container = document.getElementById('velocity-chart');
+    if (!container) return;
+
+    if (!velocity || velocity.length === 0) {
+      container.innerHTML = '<div class="analytics-empty">No data</div>';
+      return;
+    }
+
+    const maxCount = Math.max(...velocity.map(v => v.count), 1);
+    const barWidth = Math.max(12, Math.min(40, (container.clientWidth - 40) / velocity.length - 2));
+
+    container.innerHTML = `
+      <div class="velocity-bars">
+        ${velocity.map(v => {
+          const height = Math.max(2, (v.count / maxCount) * 80);
+          const label = v.month.slice(5); // MM only
+          return `
+            <div class="velocity-bar-group" title="${v.month}: ${v.count} decision${v.count !== 1 ? 's' : ''}">
+              <div class="velocity-bar" style="height:${height}px;width:${barWidth}px"></div>
+              <div class="velocity-count">${v.count}</div>
+              <div class="velocity-label">${label}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  },
+
+  _renderFunnel(funnel) {
+    const container = document.getElementById('funnel-chart');
+    if (!container) return;
+
+    const stages = [
+      { label: 'Proposed', value: funnel.proposed, color: 'var(--color-proposed)' },
+      { label: 'Accepted', value: funnel.accepted, color: 'var(--color-accepted)' },
+      { label: 'Amended', value: funnel.amended, color: '#8b5cf6' },
+      { label: 'Superseded', value: funnel.superseded, color: 'var(--color-superseded)' },
+      { label: 'Deprecated', value: funnel.deprecated, color: 'var(--color-deprecated)' },
+    ];
+    const maxVal = Math.max(...stages.map(s => s.value), 1);
+
+    container.innerHTML = stages.map(stage => {
+      const width = Math.max(4, (stage.value / maxVal) * 100);
+      return `
+        <div class="funnel-row">
+          <span class="funnel-label">${stage.label}</span>
+          <div class="funnel-bar-track">
+            <div class="funnel-bar" style="width:${width}%;background:${stage.color}"></div>
+          </div>
+          <span class="funnel-value">${stage.value}</span>
+        </div>
+      `;
+    }).join('');
+  },
+
+  _renderStability(tagStability) {
+    const container = document.getElementById('stability-chart');
+    if (!container) return;
+
+    if (!tagStability || tagStability.length === 0) {
+      container.innerHTML = '<div class="analytics-empty">No tags</div>';
+      return;
+    }
+
+    container.innerHTML = tagStability.map(t => {
+      const color = t.stability >= 80 ? '#10b981' : t.stability >= 50 ? '#f59e0b' : '#ef4444';
+      return `
+        <div class="stability-row">
+          <span class="stability-tag">${escapeHtml(t.tag)}</span>
+          <div class="stability-bar-track">
+            <div class="stability-bar" style="width:${t.stability}%;background:${color}"></div>
+          </div>
+          <span class="stability-value">${t.stability}%</span>
+        </div>
+      `;
+    }).join('');
+  }
+};
+
+// ===== Health Dashboard Module =====
+const HealthDashboard = {
+  _expanded: false,
+
+  init() {
+    const toggle = document.getElementById('health-header-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        this._expanded = !this._expanded;
+        const dashboard = document.getElementById('health-dashboard');
+        if (dashboard) {
+          dashboard.classList.toggle('collapsed', !this._expanded);
+          dashboard.classList.toggle('expanded', this._expanded);
+        }
+        const chevron = document.getElementById('health-chevron');
+        if (chevron) {
+          chevron.style.transform = this._expanded ? 'rotate(180deg)' : 'rotate(0deg)';
+        }
+      });
+    }
+  },
+
+  render(report) {
+    if (!report) return;
+
+    const gradeEl = document.getElementById('health-grade');
+    const scoreEl = document.getElementById('health-score');
+    const issueCountEl = document.getElementById('health-issue-count');
+    const statsEl = document.getElementById('health-stats');
+    const issuesEl = document.getElementById('health-issues');
+    const dashboard = document.getElementById('health-dashboard');
+
+    if (gradeEl) {
+      gradeEl.textContent = report.grade;
+      gradeEl.className = 'health-grade-badge grade-' + report.grade.toLowerCase();
+    }
+
+    if (scoreEl) {
+      scoreEl.textContent = report.score + '/100';
+    }
+
+    if (issueCountEl) {
+      const count = report.issues.length;
+      if (count === 0) {
+        issueCountEl.textContent = 'No issues';
+        issueCountEl.className = 'health-issue-count no-issues';
+      } else {
+        issueCountEl.textContent = count + ' issue' + (count !== 1 ? 's' : '');
+        const hasCritical = report.issues.some(i => i.severity === 'critical');
+        issueCountEl.className = 'health-issue-count ' + (hasCritical ? 'has-critical' : 'has-warnings');
+      }
+    }
+
+    // Stats row
+    if (statsEl) {
+      const s = report.stats;
+      statsEl.innerHTML = `
+        <div class="health-stat">
+          <span class="health-stat-value">${s.total}</span>
+          <span class="health-stat-label">Total</span>
+        </div>
+        <div class="health-stat">
+          <span class="health-stat-value stat-accepted">${s.accepted}</span>
+          <span class="health-stat-label">Accepted</span>
+        </div>
+        <div class="health-stat">
+          <span class="health-stat-value stat-proposed">${s.proposed}</span>
+          <span class="health-stat-label">Proposed</span>
+        </div>
+        <div class="health-stat">
+          <span class="health-stat-value stat-deprecated">${s.deprecated}</span>
+          <span class="health-stat-label">Deprecated</span>
+        </div>
+        <div class="health-stat">
+          <span class="health-stat-value stat-superseded">${s.superseded}</span>
+          <span class="health-stat-label">Superseded</span>
+        </div>
+      `;
+    }
+
+    // Issues list
+    if (issuesEl) {
+      if (report.issues.length === 0) {
+        issuesEl.innerHTML = '<div class="health-no-issues">All checks passed</div>';
+      } else {
+        issuesEl.innerHTML = report.issues.map(issue => {
+          const severityIcon = issue.severity === 'critical' ? '!!' : issue.severity === 'warning' ? '!' : 'i';
+          const adrLinks = issue.adrIds.map(id =>
+            `<span class="health-issue-adr" data-adr-id="${escapeHtml(id)}">${escapeHtml(id)}</span>`
+          ).join(' ');
+          return `
+            <div class="health-issue severity-${issue.severity}">
+              <div class="health-issue-icon">${severityIcon}</div>
+              <div class="health-issue-content">
+                <div class="health-issue-title">${escapeHtml(issue.title)}</div>
+                <div class="health-issue-desc">${escapeHtml(issue.description)}</div>
+                <div class="health-issue-adrs">${adrLinks}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Click handler for ADR links in issues
+        issuesEl.querySelectorAll('.health-issue-adr').forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const adrId = el.getAttribute('data-adr-id');
+            if (adrId) {
+              Graph.focusNode(adrId);
+            }
+          });
+        });
+      }
+    }
+
+    // Show dashboard
+    if (dashboard) {
+      dashboard.style.display = '';
+    }
+  }
+};
+
 // ===== Message Handling =====
 window.addEventListener('message', (event) => {
   const msg = event.data;
   if (msg.type === 'update') {
     allAdrs = msg.adrs || [];
     allEdges = msg.edges || [];
+    healthReport = msg.health || null;
+    allTensions = msg.tensions || [];
+    HealthDashboard.render(healthReport);
+    Analytics.update(msg.lifecycle || null);
     renderGraphToolbarLists();
     applyFilters();
   } else if (msg.type === 'focusNode') {
     Graph.focusNode(msg.adrId);
+  } else if (msg.type === 'aiResult') {
+    AiAssistant.handleResult(msg.content || '');
   }
 });
 
@@ -1030,6 +1717,21 @@ document.addEventListener('DOMContentLoaded', () => {
   if (graphContainer) Graph.init(graphContainer);
 
   initGraphToolbar();
+  HealthDashboard.init();
+  Analytics.init();
+  WhatIf.init();
+  AiAssistant.init();
+
+  // Impact radius slider
+  const impactSlider = document.getElementById('impact-radius-slider');
+  const impactValue = document.getElementById('impact-radius-value');
+  if (impactSlider) {
+    impactSlider.addEventListener('input', (e) => {
+      impactRadius = parseInt(e.target.value, 10);
+      if (impactValue) impactValue.textContent = impactRadius;
+      Graph.updateStyles();
+    });
+  }
 
   Resizer.init();
 

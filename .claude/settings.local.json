@@ -4,7 +4,8 @@
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
       "Bash(find /c/Repos/ideas-pocs/adr-vs-code -type d -name adr*)",
-      "Bash(node esbuild.js)"
+      "Bash(node esbuild.js)",
+      "Bash(git -C \"c:/Repos/ideas-pocs/adr-vs-code\" log --oneline -20)"
     ]
   }
 }

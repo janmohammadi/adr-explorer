@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
+import { analyzeHealth } from './healthAnalyzer';
+import { detectTensions } from './conflictDetector';
+import { computeLifecycleMetrics } from './lifecycleAnalyzer';
+import * as ai from './aiAssistant';
 import { getNonce } from './utils';
 
 export class ExplorerViewProvider {
@@ -51,7 +55,7 @@ export class ExplorerViewProvider {
     });
   }
 
-  private handleMessage(msg: { type: string; filePath?: string }): void {
+  private handleMessage(msg: { type: string; filePath?: string; content?: string; adrIds?: string[]; description?: string }): void {
     switch (msg.type) {
       case 'openFile':
         if (msg.filePath) {
@@ -60,6 +64,23 @@ export class ExplorerViewProvider {
           );
         }
         break;
+      case 'saveDraft':
+        if (msg.content) {
+          this.saveDraftAdr(msg.content);
+        }
+        break;
+      case 'aiClusterSummary':
+        this.handleAiClusterSummary(msg.adrIds || []);
+        break;
+      case 'aiGapAnalysis':
+        this.handleAiGapAnalysis();
+        break;
+      case 'aiStakeholderBrief':
+        this.handleAiStakeholderBrief(msg.adrIds?.[0]);
+        break;
+      case 'aiGenerateDraft':
+        this.handleAiGenerateDraft(msg.description || '');
+        break;
       case 'requestData':
       case 'ready':
         this.sendData();
@@ -67,11 +88,105 @@ export class ExplorerViewProvider {
     }
   }
 
+  private async saveDraftAdr(content: string): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      vscode.window.showErrorMessage('No workspace folder open');
+      return;
+    }
+
+    // Find next ADR number
+    const adrs = this.repository.getAllAdrs();
+    const maxNum = adrs.reduce((max, a) => Math.max(max, a.number), 0);
+    const nextNum = String(maxNum + 1).padStart(4, '0');
+    const fileName = `${nextNum}-draft-what-if.md`;
+
+    // Try to find an existing ADR directory
+    const adrDirs = ['docs/adr', 'docs/decisions', 'docs/architecture/decisions', 'adr'];
+    let targetDir: vscode.Uri | null = null;
+    for (const dir of adrDirs) {
+      const dirUri = vscode.Uri.joinPath(folders[0].uri, dir);
+      try {
+        await vscode.workspace.fs.stat(dirUri);
+        targetDir = dirUri;
+        break;
+      } catch {
+        // directory doesn't exist
+      }
+    }
+
+    if (!targetDir) {
+      targetDir = vscode.Uri.joinPath(folders[0].uri, 'docs', 'adr');
+      await vscode.workspace.fs.createDirectory(targetDir);
+    }
+
+    const fileUri = vscode.Uri.joinPath(targetDir, fileName);
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
+    const doc = await vscode.workspace.openTextDocument(fileUri);
+    await vscode.window.showTextDocument(doc);
+  }
+
+  private async handleAiClusterSummary(adrIds: string[]): Promise<void> {
+    const adrs = this.repository.getAllAdrs().filter(a => adrIds.includes(a.id));
+    if (adrs.length < 2) {
+      this.sendAiResult('Select 2 or more ADRs for cluster summary.');
+      return;
+    }
+    this.sendAiResult('Generating cluster summary...');
+    const result = await ai.generateClusterSummary(adrs);
+    this.sendAiResult(result);
+  }
+
+  private async handleAiGapAnalysis(): Promise<void> {
+    const adrs = this.repository.getAllAdrs();
+    this.sendAiResult('Analyzing gaps...');
+    const result = await ai.generateGapAnalysis(adrs);
+    this.sendAiResult(result);
+  }
+
+  private async handleAiStakeholderBrief(adrId?: string): Promise<void> {
+    if (!adrId) {
+      this.sendAiResult('Select an ADR to generate a stakeholder brief.');
+      return;
+    }
+    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
+    if (!adr) {
+      this.sendAiResult('ADR not found.');
+      return;
+    }
+    this.sendAiResult('Generating stakeholder brief...');
+    const result = await ai.generateStakeholderBrief(adr);
+    this.sendAiResult(result);
+  }
+
+  private async handleAiGenerateDraft(description: string): Promise<void> {
+    if (!description.trim()) {
+      this.sendAiResult('Please provide a description for the new ADR.');
+      return;
+    }
+    const adrs = this.repository.getAllAdrs();
+    this.sendAiResult('Generating ADR draft...');
+    const result = await ai.generateAdrDraft(description, adrs);
+    this.sendAiResult(result);
+  }
+
+  private sendAiResult(content: string): void {
+    this.panel?.webview.postMessage({ type: 'aiResult', content });
+  }
+
   sendData(): void {
+    const adrs = this.repository.getAllAdrs();
+    const edges = this.repository.getAllEdges();
+    const health = analyzeHealth(adrs, edges);
+    const tensions = detectTensions(adrs, edges);
+    const lifecycle = computeLifecycleMetrics(adrs, edges);
     this.panel?.webview.postMessage({
       type: 'update',
-      adrs: this.repository.getAllAdrs(),
-      edges: this.repository.getAllEdges(),
+      adrs,
+      edges,
+      health,
+      tensions,
+      lifecycle,
     });
   }
 
@@ -114,7 +229,46 @@ export class ExplorerViewProvider {
       </div>
 
       <div class="header-right">
+        <button id="ai-toggle" class="header-btn" title="AI Assistant">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+          </svg>
+          AI
+        </button>
+        <button id="whatif-toggle" class="header-btn" title="What-If Scenario">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
+          </svg>
+          What If
+        </button>
+        <button id="analytics-toggle" class="header-btn" title="Toggle Analytics">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
+          </svg>
+          Analytics
+        </button>
         <span id="record-count" class="header-count"></span>
+      </div>
+    </div>
+
+    <!-- Health Dashboard -->
+    <div id="health-dashboard" class="health-dashboard collapsed">
+      <div class="health-header" id="health-header-toggle">
+        <div class="health-header-left">
+          <div class="health-grade-badge" id="health-grade">—</div>
+          <span class="health-title">Decision Health</span>
+          <span class="health-score" id="health-score"></span>
+        </div>
+        <div class="health-header-right">
+          <span class="health-issue-count" id="health-issue-count"></span>
+          <svg class="health-chevron" id="health-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+      </div>
+      <div class="health-body" id="health-body">
+        <div class="health-stats" id="health-stats"></div>
+        <div class="health-issues" id="health-issues"></div>
       </div>
     </div>
 
@@ -152,6 +306,13 @@ export class ExplorerViewProvider {
               Filter
               <span id="graph-filter-count" class="graph-toolbar-badge" style="display:none"></span>
             </button>
+            <button id="graph-tensions-toggle" class="graph-toolbar-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+              </svg>
+              Tensions
+              <span id="graph-tensions-count" class="graph-toolbar-badge" style="display:none"></span>
+            </button>
             <button id="graph-group-toggle" class="graph-toolbar-btn">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
@@ -160,6 +321,12 @@ export class ExplorerViewProvider {
               <span id="graph-group-count" class="graph-toolbar-badge" style="display:none"></span>
             </button>
           </div>
+          <div id="impact-radius-control" class="impact-radius-control" style="display:none">
+            <label class="impact-radius-label">Impact depth</label>
+            <input id="impact-radius-slider" type="range" min="1" max="5" value="2" class="impact-radius-slider">
+            <span id="impact-radius-value" class="impact-radius-value">2</span>
+          </div>
+          <div id="graph-tensions-list" class="graph-toolbar-list tensions-list"></div>
           <div id="graph-filter-tag-list" class="graph-toolbar-list"></div>
           <div id="graph-group-tag-list" class="graph-toolbar-list"></div>
         </div>
@@ -198,6 +365,107 @@ export class ExplorerViewProvider {
         <div id="preview-meta" class="preview-meta"></div>
         <div id="preview-body" class="preview-body"></div>
       </div>
+    </div>
+  </div>
+  <!-- What-If Modal -->
+  <div id="whatif-modal" class="whatif-modal" style="display:none">
+    <div class="whatif-modal-content">
+      <div class="whatif-modal-header">
+        <span class="whatif-modal-title">What-If Scenario</span>
+        <button id="whatif-close" class="preview-close" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="whatif-modal-body">
+        <div class="whatif-field">
+          <label class="whatif-label">Title</label>
+          <input id="whatif-title" type="text" class="whatif-input" placeholder="New decision title..." />
+        </div>
+        <div class="whatif-field">
+          <label class="whatif-label">Status</label>
+          <select id="whatif-status" class="whatif-select">
+            <option value="proposed">Proposed</option>
+            <option value="accepted">Accepted</option>
+          </select>
+        </div>
+        <div class="whatif-field">
+          <label class="whatif-label">Tags (comma-separated)</label>
+          <input id="whatif-tags" type="text" class="whatif-input" placeholder="e.g. security, auth" />
+        </div>
+        <div class="whatif-field">
+          <label class="whatif-label">Supersedes (ADR IDs, comma-separated)</label>
+          <input id="whatif-supersedes" type="text" class="whatif-input" placeholder="e.g. ADR-0003, ADR-0007" />
+        </div>
+        <div class="whatif-field">
+          <label class="whatif-label">Relates to (ADR IDs, comma-separated)</label>
+          <input id="whatif-relates" type="text" class="whatif-input" placeholder="e.g. ADR-0001" />
+        </div>
+      </div>
+      <div class="whatif-modal-footer">
+        <button id="whatif-apply" class="whatif-btn whatif-btn-primary">Apply to Graph</button>
+        <button id="whatif-discard" class="whatif-btn">Discard</button>
+        <button id="whatif-save" class="whatif-btn whatif-btn-save" style="display:none">Save as Draft</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analytics Overlay -->
+  <div id="analytics-panel" class="analytics-panel" style="display:none">
+    <div class="analytics-header">
+      <span class="analytics-title">Decision Lifecycle Analytics</span>
+      <button id="analytics-close" class="preview-close" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="analytics-body">
+      <div class="analytics-section">
+        <div class="analytics-section-title">Decision Velocity</div>
+        <div id="velocity-chart" class="analytics-chart"></div>
+      </div>
+      <div class="analytics-section">
+        <div class="analytics-section-title">Lifecycle Funnel</div>
+        <div id="funnel-chart" class="analytics-funnel"></div>
+      </div>
+      <div class="analytics-section">
+        <div class="analytics-section-title">Tag Stability</div>
+        <div id="stability-chart" class="analytics-stability"></div>
+      </div>
+    </div>
+  </div>
+  <!-- AI Assistant Panel -->
+  <div id="ai-panel" class="ai-panel" style="display:none">
+    <div class="ai-panel-header">
+      <span class="ai-panel-title">AI Assistant</span>
+      <button id="ai-panel-close" class="preview-close" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="ai-actions">
+      <button class="ai-action-btn" id="ai-gap-analysis">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h5"/><path d="M17 12h5"/><circle cx="12" cy="12" r="3"/></svg>
+        Analyze Gaps
+      </button>
+      <button class="ai-action-btn" id="ai-cluster-summary">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-6"/><path d="M21 3 3 21"/></svg>
+        Cluster Summary
+      </button>
+      <button class="ai-action-btn" id="ai-stakeholder-brief">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+        Stakeholder Brief
+      </button>
+      <div class="ai-draft-row">
+        <input id="ai-draft-input" type="text" class="ai-draft-input" placeholder="Describe a new decision..." />
+        <button class="ai-action-btn ai-action-primary" id="ai-generate-draft">Draft ADR</button>
+      </div>
+    </div>
+    <div class="ai-result-container">
+      <div id="ai-result" class="ai-result"></div>
     </div>
   </div>
   <script nonce="${nonce}" src="${explorerJsUri}"></script>

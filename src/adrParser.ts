@@ -1,8 +1,10 @@
 import matter = require('gray-matter');
 import * as path from 'path';
-import { AdrRecord, AdrStatus } from './types';
+import { AdrRecord, AdrStatus, ConfidenceLevel } from './types';
 
 const VALID_STATUSES: AdrStatus[] = ['proposed', 'accepted', 'deprecated', 'superseded'];
+const VALID_CONFIDENCE: ConfidenceLevel[] = ['high', 'medium', 'low'];
+const DUE_SOON_DAYS = 30;
 
 function normalizeRefs(refs: unknown): string[] {
   if (!Array.isArray(refs)) { return []; }
@@ -34,6 +36,28 @@ export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | 
       ? new Date(data.date).toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10);
 
+    const reviewBy = data['review-by'] ? new Date(data['review-by']).toISOString().slice(0, 10) : undefined;
+    const reviewInterval = data['review-interval'] ? String(data['review-interval']) : undefined;
+    const expires = data['expires'] ? new Date(data['expires']).toISOString().slice(0, 10) : undefined;
+    const rawConfidence = String(data.confidence || '').toLowerCase().trim();
+    const confidence = VALID_CONFIDENCE.includes(rawConfidence as ConfidenceLevel) ? rawConfidence as ConfidenceLevel : undefined;
+
+    // Compute review status
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const soonStr = new Date(now.getTime() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
+    let reviewStatus: 'overdue' | 'due-soon' | 'expired' | 'ok' | undefined;
+
+    if (expires && todayStr >= expires) {
+      reviewStatus = 'expired';
+    } else if (reviewBy && todayStr > reviewBy) {
+      reviewStatus = 'overdue';
+    } else if (reviewBy && soonStr >= reviewBy) {
+      reviewStatus = 'due-soon';
+    } else if (reviewBy || expires) {
+      reviewStatus = 'ok';
+    }
+
     return {
       id,
       number: num,
@@ -47,6 +71,11 @@ export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | 
       tags: Array.isArray(data.tags) ? data.tags : [],
       filePath,
       content,
+      reviewBy,
+      reviewInterval,
+      expires,
+      confidence,
+      reviewStatus,
     };
   } catch {
     return null;
