@@ -5,7 +5,9 @@ date: 2025-01-14
 deciders: ["Reza Janmohammadi"]
 supersedes: [ADR-0002, ADR-0003]
 amends: [ADR-0001]
-relates-to: ["0007-entraid-authentication-and-authorization"]
+relates-to:
+  - id: ADR-0007
+    reason: "Plugin SPA uses MSAL.js for EntraID auth; auth architecture must align with plugin hosting model"
 tags: ["outlook", "plugin", "officejs", "architecture", "aks"]
 ---
 

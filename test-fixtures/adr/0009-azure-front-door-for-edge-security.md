@@ -5,7 +5,9 @@ date: 2025-12-10
 deciders: ["Reza Janmohammadi"]
 supersedes: []
 amends: []
-relates-to: ["0008-cicd-pipeline-containerization-strategy"]
+relates-to:
+  - id: ADR-0008
+    reason: "Front Door deployment is managed by the CI/CD pipeline, not standalone Bicep"
 tags: ["security", "infrastructure", "azure", "compliance"]
 ---
 

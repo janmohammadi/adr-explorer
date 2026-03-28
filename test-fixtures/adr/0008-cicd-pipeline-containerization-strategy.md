@@ -5,7 +5,9 @@ date: 2025-01-17
 deciders: ["Development Team"]
 supersedes: []
 amends: []
-relates-to: ["0009-azure-front-door-for-edge-security"]
+relates-to:
+  - id: ADR-0009
+    reason: "Pipeline deploys Front Door WAF rules and Private Link config alongside AKS resources"
 tags: ["cicd", "devops", "containers", "security", "infrastructure"]
 ---
 

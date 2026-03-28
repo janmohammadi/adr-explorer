@@ -1,6 +1,6 @@
 import matter = require('gray-matter');
 import * as path from 'path';
-import { AdrRecord, AdrStatus, ConfidenceLevel } from './types';
+import { AdrRecord, AdrStatus, ConfidenceLevel, RelatesToEntry } from './types';
 
 const VALID_STATUSES: AdrStatus[] = ['proposed', 'accepted', 'deprecated', 'superseded'];
 const VALID_CONFIDENCE: ConfidenceLevel[] = ['high', 'medium', 'low'];
@@ -14,6 +14,23 @@ function normalizeRefs(refs: unknown): string[] {
       return m ? `ADR-${String(parseInt(m[1], 10)).padStart(4, '0')}` : null;
     })
     .filter((v): v is string => v !== null);
+}
+
+function normalizeRelatesToRefs(refs: unknown): RelatesToEntry[] {
+  if (!Array.isArray(refs)) { return []; }
+  return refs
+    .map((r: unknown): RelatesToEntry | null => {
+      if (r && typeof r === 'object' && 'id' in r) {
+        const obj = r as { id: unknown; reason?: unknown };
+        const m = String(obj.id).match(/(\d+)/);
+        if (!m) return null;
+        const id = `ADR-${String(parseInt(m[1], 10)).padStart(4, '0')}`;
+        return { id, reason: obj.reason ? String(obj.reason) : undefined };
+      }
+      const m = String(r).match(/(\d+)/);
+      return m ? { id: `ADR-${String(parseInt(m[1], 10)).padStart(4, '0')}` } : null;
+    })
+    .filter((v): v is RelatesToEntry => v !== null);
 }
 
 export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | null {
@@ -67,7 +84,7 @@ export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | 
       deciders: Array.isArray(data.deciders) ? data.deciders : [],
       supersedes: normalizeRefs(data.supersedes),
       amends: normalizeRefs(data.amends),
-      relatesTo: normalizeRefs(data['relates-to']),
+      relatesTo: normalizeRelatesToRefs(data['relates-to']),
       tags: Array.isArray(data.tags) ? data.tags : [],
       filePath,
       content,

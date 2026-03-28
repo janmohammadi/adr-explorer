@@ -94,9 +94,9 @@ export class AdrRepository implements vscode.Disposable {
           edges.push({ source: adr.id, target, type: 'amends' });
         }
       }
-      for (const target of adr.relatesTo) {
-        if (allIds.has(target)) {
-          edges.push({ source: adr.id, target, type: 'relates-to' });
+      for (const rel of adr.relatesTo) {
+        if (allIds.has(rel.id)) {
+          edges.push({ source: adr.id, target: rel.id, type: 'relates-to', reason: rel.reason });
         }
       }
     }

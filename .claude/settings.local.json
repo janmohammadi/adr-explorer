@@ -5,7 +5,10 @@
       "Bash(npx tsc:*)",
       "Bash(find /c/Repos/ideas-pocs/adr-vs-code -type d -name adr*)",
       "Bash(node esbuild.js)",
-      "Bash(git -C \"c:/Repos/ideas-pocs/adr-vs-code\" log --oneline -20)"
+      "Bash(git -C \"c:/Repos/ideas-pocs/adr-vs-code\" log --oneline -20)",
+      "Bash(find /c/Repos/ideas-pocs/adr-vs-code -type f \\\\\\(-name *.md -o -name *.adr \\\\\\))",
+      "Read(//c/Users/RezaJanmohammadi/.claude/**)",
+      "Bash(find /c/Repos/ideas-pocs/adr-vs-code -maxdepth 2 -name CLAUDE.md -o -name *skill* -o -name .claude*)"
     ]
   }
 }

@@ -5,7 +5,9 @@ date: 2025-01-14
 deciders: ["Reza Janmohammadi"]
 supersedes: []
 amends: []
-relates-to: ["0006-unified-officejs-plugin-architecture"]
+relates-to:
+  - id: ADR-0006
+    reason: "EntraID tokens are validated by the FastAPI backend hosted on the unified AKS architecture"
 tags: ["auth", "security", "entraid", "backend"]
 ---
 

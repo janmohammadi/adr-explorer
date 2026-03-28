@@ -2,6 +2,11 @@ export type AdrStatus = 'proposed' | 'accepted' | 'deprecated' | 'superseded';
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
+export interface RelatesToEntry {
+  id: string;
+  reason?: string;
+}
+
 export interface AdrRecord {
   /** Derived from filename, e.g., "ADR-0001" */
   id: string;
@@ -13,7 +18,7 @@ export interface AdrRecord {
   deciders: string[];
   supersedes: string[];
   amends: string[];
-  relatesTo: string[];
+  relatesTo: RelatesToEntry[];
   tags: string[];
   filePath: string;
   content: string;
@@ -33,6 +38,7 @@ export interface AdrEdge {
   source: string;
   target: string;
   type: 'supersedes' | 'amends' | 'relates-to';
+  reason?: string;
 }
 
 export interface HealthIssueMsg {

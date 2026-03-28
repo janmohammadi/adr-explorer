@@ -5,7 +5,11 @@ date: 2026-03-28
 deciders: ["Reza Janmohammadi"]
 supersedes: ["ADR-0005"]
 amends: ["ADR-0008"]
-relates-to: ["ADR-0007", "ADR-0009"]
+relates-to:
+  - id: ADR-0007
+    reason: "AI Foundry and Cosmos DB use EntraID workload identity, replacing Langfuse's separate API keys"
+  - id: ADR-0009
+    reason: "New Cosmos DB endpoint must be routed through Front Door WAF rules"
 tags: ["observability", "tracing", "cosmosdb", "azure-ai-foundry", "cost", "backend"]
 review-by: 2026-09-24
 confidence: medium

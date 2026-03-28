@@ -449,7 +449,7 @@ const Graph = {
       const sourceExists = nodes.find(n => n.id === edge.source);
       const targetExists = nodes.find(n => n.id === edge.target);
       if (sourceExists && targetExists) {
-        links.push({ source: edge.source, target: edge.target, type: edge.type });
+        links.push({ source: edge.source, target: edge.target, type: edge.type, reason: edge.reason });
       }
     });
 
@@ -487,9 +487,15 @@ const Graph = {
       .attr('fill', '#666')
       .attr('text-anchor', 'middle')
       .attr('dy', -5)
-      .style('pointer-events', 'none')
+      .style('pointer-events', 'auto')
+      .style('cursor', d => d.reason ? 'help' : 'default')
       .attr('font-family', "'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace")
-      .text(d => d.type);
+      .text(d => d.type)
+      .each(function (d) {
+        if (d.reason) {
+          select(this).append('title').text(d.reason);
+        }
+      });
 
     // Nodes
     const self = this;
@@ -1848,7 +1854,7 @@ const WhatIf = {
 
     const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
     const supersedes = supersedesRaw.split(',').map(t => t.trim()).filter(Boolean);
-    const relatesTo = relatesRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const relatesTo = relatesRaw.split(',').map(t => t.trim()).filter(Boolean).map(id => ({ id }));
 
     // Create ghost ADR with a special ID
     const ghostId = 'ADR-GHOST';
@@ -1911,7 +1917,7 @@ date: ${adr.date}
 deciders: []
 supersedes: [${adr.supersedes.map(s => `"${s}"`).join(', ')}]
 amends: []
-relates-to: [${adr.relatesTo.map(r => `"${r}"`).join(', ')}]
+relates-to: [${adr.relatesTo.map(r => `"${r.id}"`).join(', ')}]
 tags: [${adr.tags.map(t => `"${t}"`).join(', ')}]
 ---
 
@@ -1946,9 +1952,9 @@ tags: [${adr.tags.map(t => `"${t}"`).join(', ')}]
         augEdges.push({ source: this._ghostAdr.id, target, type: 'supersedes', _isGhost: true });
       }
     }
-    for (const target of this._ghostAdr.relatesTo) {
-      if (allIds.has(target)) {
-        augEdges.push({ source: this._ghostAdr.id, target, type: 'relates-to', _isGhost: true });
+    for (const rel of this._ghostAdr.relatesTo) {
+      if (allIds.has(rel.id)) {
+        augEdges.push({ source: this._ghostAdr.id, target: rel.id, type: 'relates-to', _isGhost: true });
       }
     }
 
