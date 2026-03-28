@@ -30,6 +30,12 @@
         "icon": "$(layout)"
       },
       {
+        "command": "adrExplorer.openAi",
+        "title": "Open AI Assistant",
+        "category": "ADR Explorer",
+        "icon": "$(robot)"
+      },
+      {
         "command": "adrExplorer.refresh",
         "title": "Refresh",
         "category": "ADR Explorer",

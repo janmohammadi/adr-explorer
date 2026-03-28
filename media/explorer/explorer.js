@@ -1229,14 +1229,9 @@ const AiAssistant = {
 
   init() {
     const toggle = document.getElementById('ai-toggle');
-    const close = document.getElementById('ai-panel-close');
     if (toggle) toggle.addEventListener('click', () => {
-      this._visible = !this._visible;
-      this._updateVisibility();
-    });
-    if (close) close.addEventListener('click', () => {
-      this._visible = false;
-      this._updateVisibility();
+      // Open AI panel in a separate tab
+      vscode.postMessage({ type: 'openAiPanel' });
     });
 
     // Mode tabs

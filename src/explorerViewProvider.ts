@@ -3,7 +3,6 @@ import { AdrRepository } from './adrRepository';
 import { analyzeHealth } from './healthAnalyzer';
 import { detectTensions } from './conflictDetector';
 import { computeLifecycleMetrics } from './lifecycleAnalyzer';
-import * as ai from './aiAssistant';
 import { getNonce } from './utils';
 
 export class ExplorerViewProvider {
@@ -55,7 +54,7 @@ export class ExplorerViewProvider {
     });
   }
 
-  private handleMessage(msg: { type: string; filePath?: string; content?: string; adrIds?: string[]; description?: string; message?: string; decision?: string; answers?: string; action?: string }): void {
+  private handleMessage(msg: { type: string; filePath?: string; content?: string }): void {
     switch (msg.type) {
       case 'openFile':
         if (msg.filePath) {
@@ -69,38 +68,8 @@ export class ExplorerViewProvider {
           this.saveDraftAdr(msg.content);
         }
         break;
-      case 'aiClusterSummary':
-        this.handleAiClusterSummary(msg.adrIds || []);
-        break;
-      case 'aiGapAnalysis':
-        this.handleAiGapAnalysis();
-        break;
-      case 'aiStakeholderBrief':
-        this.handleAiStakeholderBrief(msg.adrIds?.[0]);
-        break;
-      // Draft session messages
-      case 'aiDraftStart':
-        this.handleDraftStart(msg.description || '');
-        break;
-      case 'aiDraftChat':
-        this.handleDraftChat(msg.message || '');
-        break;
-      case 'aiDraftAdvance':
-        this.handleDraftAdvance(msg.message || '', msg.answers || '');
-        break;
-      case 'aiDraftAction':
-        this.handleDraftAction(msg.action || '');
-        break;
-      case 'aiDraftDecide':
-        this.handleDraftDecide(msg.decision || '');
-        break;
-      case 'aiDraftGenerate':
-        this.handleDraftGenerate();
-        break;
-      case 'aiDraftSave':
-        if (msg.content) {
-          this.saveDraftAdr(msg.content);
-        }
+      case 'openAiPanel':
+        vscode.commands.executeCommand('adrExplorer.openAi');
         break;
       case 'requestData':
       case 'ready':
@@ -145,142 +114,6 @@ export class ExplorerViewProvider {
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
     const doc = await vscode.workspace.openTextDocument(fileUri);
     await vscode.window.showTextDocument(doc);
-  }
-
-  private async handleAiClusterSummary(adrIds: string[]): Promise<void> {
-    const adrs = this.repository.getAllAdrs().filter(a => adrIds.includes(a.id));
-    if (adrs.length < 2) {
-      this.sendAiResult('Select 2 or more ADRs for cluster summary.');
-      return;
-    }
-    this.sendAiResult('Generating cluster summary...');
-    const result = await ai.generateClusterSummary(adrs);
-    this.sendAiResult(result);
-  }
-
-  private async handleAiGapAnalysis(): Promise<void> {
-    const adrs = this.repository.getAllAdrs();
-    this.sendAiResult('Analyzing gaps...');
-    const result = await ai.generateGapAnalysis(adrs);
-    this.sendAiResult(result);
-  }
-
-  private async handleAiStakeholderBrief(adrId?: string): Promise<void> {
-    if (!adrId) {
-      this.sendAiResult('Select an ADR to generate a stakeholder brief.');
-      return;
-    }
-    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
-    if (!adr) {
-      this.sendAiResult('ADR not found.');
-      return;
-    }
-    this.sendAiResult('Generating stakeholder brief...');
-    const result = await ai.generateStakeholderBrief(adr);
-    this.sendAiResult(result);
-  }
-
-  // ===== Draft Session =====
-  private draftSession: ai.DraftSession | null = null;
-
-  private async handleDraftStart(description: string): Promise<void> {
-    if (!description.trim()) {
-      this.sendDraftMessages([{ kind: 'text', content: 'Please describe what decision you\'re thinking about.' }]);
-      return;
-    }
-    const adrs = this.repository.getAllAdrs();
-    const edges = this.repository.getAllEdges();
-    this.draftSession = new ai.DraftSession(adrs, edges);
-
-    this.sendDraftPhase('describe');
-    this.sendDraftLoading('Analyzing your decision context...');
-
-    const messages = await this.draftSession.start(description);
-    this.sendDraftMessages(messages);
-    this.sendDraftState(this.draftSession.state);
-  }
-
-  private async handleDraftChat(message: string): Promise<void> {
-    if (!this.draftSession) return;
-    this.sendDraftLoading('Thinking...');
-    const messages = await this.draftSession.chat(message);
-    this.sendDraftMessages(messages);
-  }
-
-  private async handleDraftAdvance(phase: string, answers: string): Promise<void> {
-    if (!this.draftSession) return;
-    this.sendDraftLoading('Analyzing...');
-
-    let messages: ai.DraftMessage[];
-    switch (phase) {
-      case 'context':
-        messages = await this.draftSession.advanceToContext(answers);
-        this.sendDraftPhase('context');
-        break;
-      case 'options':
-        messages = await this.draftSession.advanceToOptions();
-        this.sendDraftPhase('options');
-        break;
-      default:
-        return;
-    }
-    this.sendDraftMessages(messages);
-    this.sendDraftState(this.draftSession.state);
-  }
-
-  private async handleDraftAction(action: string): Promise<void> {
-    if (!this.draftSession) return;
-    switch (action) {
-      case 'advance-options':
-        await this.handleDraftAdvance('options', '');
-        break;
-      case 'generate':
-        await this.handleDraftGenerate();
-        break;
-      case 'back-options':
-        this.sendDraftPhase('options');
-        const messages = await this.draftSession.advanceToOptions();
-        this.sendDraftMessages(messages);
-        break;
-    }
-  }
-
-  private async handleDraftDecide(decision: string): Promise<void> {
-    if (!this.draftSession) return;
-    this.sendDraftLoading('Evaluating your decision...');
-    const messages = await this.draftSession.advanceToDecide(decision);
-    this.sendDraftPhase('decide');
-    this.sendDraftMessages(messages);
-    this.sendDraftState(this.draftSession.state);
-  }
-
-  private async handleDraftGenerate(): Promise<void> {
-    if (!this.draftSession) return;
-    this.sendDraftLoading('Generating ADR...');
-    const messages = await this.draftSession.advanceToReview();
-    this.sendDraftPhase('review');
-    this.sendDraftMessages(messages);
-    this.sendDraftState(this.draftSession.state);
-  }
-
-  private sendAiResult(content: string): void {
-    this.panel?.webview.postMessage({ type: 'aiResult', content });
-  }
-
-  private sendDraftMessages(messages: ai.DraftMessage[]): void {
-    this.panel?.webview.postMessage({ type: 'draftMessages', messages });
-  }
-
-  private sendDraftLoading(text: string): void {
-    this.panel?.webview.postMessage({ type: 'draftLoading', content: text });
-  }
-
-  private sendDraftPhase(phase: string): void {
-    this.panel?.webview.postMessage({ type: 'draftPhase', phase });
-  }
-
-  private sendDraftState(state: ai.DraftSessionState): void {
-    this.panel?.webview.postMessage({ type: 'draftState', state });
   }
 
   sendData(): void {
@@ -542,101 +375,6 @@ export class ExplorerViewProvider {
       <div class="analytics-section">
         <div class="analytics-section-title">Tag Stability</div>
         <div id="stability-chart" class="analytics-stability"></div>
-      </div>
-    </div>
-  </div>
-  <!-- AI Assistant Panel -->
-  <div id="ai-panel" class="ai-panel" style="display:none">
-    <div class="ai-panel-header">
-      <span class="ai-panel-title">AI Assistant</span>
-      <div class="ai-panel-header-actions">
-        <button id="ai-mode-tools" class="ai-mode-btn active" title="Quick tools">Tools</button>
-        <button id="ai-mode-draft" class="ai-mode-btn" title="Interactive ADR drafting">Draft ADR</button>
-        <button id="ai-panel-close" class="preview-close" title="Close">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Tools Mode (quick actions) -->
-    <div id="ai-tools-view" class="ai-view">
-      <div class="ai-actions">
-        <button class="ai-action-btn" id="ai-gap-analysis">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h5"/><path d="M17 12h5"/><circle cx="12" cy="12" r="3"/></svg>
-          Analyze Gaps
-        </button>
-        <button class="ai-action-btn" id="ai-cluster-summary">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-6"/><path d="M21 3 3 21"/></svg>
-          Cluster Summary
-        </button>
-        <button class="ai-action-btn" id="ai-stakeholder-brief">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
-          Stakeholder Brief
-        </button>
-      </div>
-      <div class="ai-result-container">
-        <div id="ai-result" class="ai-result"></div>
-      </div>
-    </div>
-
-    <!-- Draft Mode (interactive co-drafting) -->
-    <div id="ai-draft-view" class="ai-view" style="display:none">
-      <!-- Phase Progress Bar -->
-      <div class="draft-phase-bar">
-        <div class="draft-phase-step active" data-phase="describe">
-          <span class="draft-phase-dot"></span>
-          <span class="draft-phase-label">Describe</span>
-        </div>
-        <div class="draft-phase-connector"></div>
-        <div class="draft-phase-step" data-phase="context">
-          <span class="draft-phase-dot"></span>
-          <span class="draft-phase-label">Context</span>
-        </div>
-        <div class="draft-phase-connector"></div>
-        <div class="draft-phase-step" data-phase="options">
-          <span class="draft-phase-dot"></span>
-          <span class="draft-phase-label">Options</span>
-        </div>
-        <div class="draft-phase-connector"></div>
-        <div class="draft-phase-step" data-phase="decide">
-          <span class="draft-phase-dot"></span>
-          <span class="draft-phase-label">Decide</span>
-        </div>
-        <div class="draft-phase-connector"></div>
-        <div class="draft-phase-step" data-phase="review">
-          <span class="draft-phase-dot"></span>
-          <span class="draft-phase-label">Review</span>
-        </div>
-      </div>
-
-      <!-- Chat Log -->
-      <div id="draft-chat-log" class="draft-chat-log"></div>
-
-      <!-- Draft Preview (shown in review phase) -->
-      <div id="draft-preview" class="draft-preview" style="display:none">
-        <div class="draft-preview-header">
-          <span>Generated ADR</span>
-          <button id="draft-save-btn" class="whatif-btn whatif-btn-save">Save as ADR</button>
-        </div>
-        <textarea id="draft-preview-editor" class="draft-preview-editor"></textarea>
-      </div>
-
-      <!-- Input Bar -->
-      <div class="draft-input-bar">
-        <div id="draft-start-row" class="draft-start-row">
-          <input id="draft-start-input" type="text" class="draft-chat-input" placeholder="What decision are you thinking about?" />
-          <button id="draft-start-btn" class="ai-action-btn ai-action-primary">Start</button>
-        </div>
-        <div id="draft-chat-row" class="draft-chat-row" style="display:none">
-          <input id="draft-chat-input" type="text" class="draft-chat-input" placeholder="Reply or ask a question..." />
-          <button id="draft-send-btn" class="ai-action-btn ai-action-primary">Send</button>
-        </div>
-        <div id="draft-advance-bar" class="draft-advance-bar" style="display:none">
-          <button id="draft-advance-btn" class="ai-action-btn ai-action-primary draft-advance-btn"></button>
-          <button id="draft-reset-btn" class="ai-action-btn" title="Start over">Reset</button>
-        </div>
       </div>
     </div>
   </div>

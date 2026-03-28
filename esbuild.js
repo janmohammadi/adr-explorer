@@ -30,12 +30,21 @@ async function main() {
     format: 'iife',
   });
 
+  // AI Panel webview bundle (Browser)
+  const aiPanelCtx = await esbuild.context({
+    ...commonOptions,
+    entryPoints: [resolve(__dirname, 'media/ai-panel/ai-panel.js')],
+    outfile: resolve(__dirname, 'dist/ai-panel.js'),
+    platform: 'browser',
+    format: 'iife',
+  });
+
   if (watch) {
-    await Promise.all([extensionCtx.watch(), explorerCtx.watch()]);
+    await Promise.all([extensionCtx.watch(), explorerCtx.watch(), aiPanelCtx.watch()]);
     console.log('Watching for changes...');
   } else {
-    await Promise.all([extensionCtx.rebuild(), explorerCtx.rebuild()]);
-    await Promise.all([extensionCtx.dispose(), explorerCtx.dispose()]);
+    await Promise.all([extensionCtx.rebuild(), explorerCtx.rebuild(), aiPanelCtx.rebuild()]);
+    await Promise.all([extensionCtx.dispose(), explorerCtx.dispose(), aiPanelCtx.dispose()]);
     console.log('Build complete.');
   }
 }
