@@ -1211,8 +1211,21 @@ function applyFilters() {
 }
 
 // ===== AI Assistant Module =====
+const DRAFT_PHASES = ['describe', 'context', 'options', 'decide', 'review'];
+const PHASE_LABELS = { describe: 'Describe', context: 'Context', options: 'Options', decide: 'Decide', review: 'Review' };
+const ADVANCE_LABELS = {
+  describe: 'Analyze Context & Impact →',
+  context: 'Explore Options →',
+  options: null, // options phase uses decision input instead
+  decide: 'Generate ADR →',
+  review: null,
+};
+
 const AiAssistant = {
   _visible: false,
+  _mode: 'tools', // 'tools' or 'draft'
+  _draftPhase: 'describe',
+  _draftActive: false,
 
   init() {
     const toggle = document.getElementById('ai-toggle');
@@ -1226,44 +1239,51 @@ const AiAssistant = {
       this._updateVisibility();
     });
 
-    // Action buttons
+    // Mode tabs
+    document.getElementById('ai-mode-tools')?.addEventListener('click', () => this._setMode('tools'));
+    document.getElementById('ai-mode-draft')?.addEventListener('click', () => this._setMode('draft'));
+
+    // Tools mode buttons
     document.getElementById('ai-gap-analysis')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'aiGapAnalysis' });
-      this._showLoading();
+      this._showToolsLoading();
     });
 
     document.getElementById('ai-cluster-summary')?.addEventListener('click', () => {
-      // Use currently filtered ADR IDs
       const { adrs } = getFilteredData();
-      const ids = adrs.map(a => a.id);
-      vscode.postMessage({ type: 'aiClusterSummary', adrIds: ids });
-      this._showLoading();
+      vscode.postMessage({ type: 'aiClusterSummary', adrIds: adrs.map(a => a.id) });
+      this._showToolsLoading();
     });
 
     document.getElementById('ai-stakeholder-brief')?.addEventListener('click', () => {
       if (selectedAdrId) {
         vscode.postMessage({ type: 'aiStakeholderBrief', adrIds: [selectedAdrId] });
-        this._showLoading();
+        this._showToolsLoading();
       } else {
-        this._showResult('Select an ADR first to generate a stakeholder brief.');
+        this._showToolsResult('Select an ADR first to generate a stakeholder brief.');
       }
     });
 
-    document.getElementById('ai-generate-draft')?.addEventListener('click', () => {
-      const input = document.getElementById('ai-draft-input');
-      const description = input?.value || '';
-      if (description.trim()) {
-        vscode.postMessage({ type: 'aiGenerateDraft', description });
-        this._showLoading();
-      }
-    });
+    // Draft mode: Start
+    const startBtn = document.getElementById('draft-start-btn');
+    const startInput = document.getElementById('draft-start-input');
+    if (startBtn) startBtn.addEventListener('click', () => this._startDraft());
+    if (startInput) startInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._startDraft(); });
 
-    // Enter key on draft input
-    document.getElementById('ai-draft-input')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        document.getElementById('ai-generate-draft')?.click();
-      }
-    });
+    // Draft mode: Chat
+    const sendBtn = document.getElementById('draft-send-btn');
+    const chatInput = document.getElementById('draft-chat-input');
+    if (sendBtn) sendBtn.addEventListener('click', () => this._sendChat());
+    if (chatInput) chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sendChat(); });
+
+    // Draft mode: Advance phase
+    document.getElementById('draft-advance-btn')?.addEventListener('click', () => this._advancePhase());
+
+    // Draft mode: Reset
+    document.getElementById('draft-reset-btn')?.addEventListener('click', () => this._resetDraft());
+
+    // Draft mode: Save
+    document.getElementById('draft-save-btn')?.addEventListener('click', () => this._saveDraft());
   },
 
   _updateVisibility() {
@@ -1273,29 +1293,525 @@ const AiAssistant = {
     if (toggle) toggle.classList.toggle('active', this._visible);
   },
 
-  _showLoading() {
-    const result = document.getElementById('ai-result');
-    if (result) result.innerHTML = '<div class="ai-loading">Thinking...</div>';
+  _setMode(mode) {
+    this._mode = mode;
+    document.getElementById('ai-mode-tools')?.classList.toggle('active', mode === 'tools');
+    document.getElementById('ai-mode-draft')?.classList.toggle('active', mode === 'draft');
+    const toolsView = document.getElementById('ai-tools-view');
+    const draftView = document.getElementById('ai-draft-view');
+    if (toolsView) toolsView.style.display = mode === 'tools' ? '' : 'none';
+    if (draftView) draftView.style.display = mode === 'draft' ? '' : 'none';
   },
 
-  _showResult(content) {
-    const result = document.getElementById('ai-result');
-    if (result) {
-      // Simple markdown-to-html: convert **bold**, headings, lists, newlines
-      const html = escapeHtml(content)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
-        .replace(/^\d+\. (.*?)$/gm, '<li>$1</li>')
-        .replace(/^- (.*?)$/gm, '<li>$1</li>')
-        .replace(/\n/g, '<br>');
-      result.innerHTML = `<div class="ai-result-content">${html}</div>`;
+  // ===== Tools Mode =====
+  _showToolsLoading() {
+    const el = document.getElementById('ai-result');
+    if (el) el.innerHTML = '<div class="ai-loading">Thinking...</div>';
+  },
+
+  _showToolsResult(content) {
+    const el = document.getElementById('ai-result');
+    if (el) {
+      el.innerHTML = `<div class="ai-result-content">${this._renderMarkdown(content)}</div>`;
     }
   },
 
   handleResult(content) {
-    this._showResult(content);
+    this._showToolsResult(content);
+  },
+
+  // ===== Draft Mode =====
+  _startDraft() {
+    const input = document.getElementById('draft-start-input');
+    const description = input?.value || '';
+    if (!description.trim()) return;
+
+    this._draftActive = true;
+    this._draftPhase = 'describe';
+
+    // Add architect message to chat
+    this._addArchitectMessage(description);
+
+    // Switch to chat input
+    const startRow = document.getElementById('draft-start-row');
+    const chatRow = document.getElementById('draft-chat-row');
+    if (startRow) startRow.style.display = 'none';
+    if (chatRow) chatRow.style.display = 'flex';
+
+    // Clear input
+    if (input) input.value = '';
+
+    // Update phases
+    this._updatePhaseBar('describe');
+
+    // Send to extension
+    vscode.postMessage({ type: 'aiDraftStart', description });
+  },
+
+  _sendChat() {
+    const input = document.getElementById('draft-chat-input');
+    const message = input?.value || '';
+    if (!message.trim()) return;
+
+    this._addArchitectMessage(message);
+    if (input) input.value = '';
+
+    vscode.postMessage({ type: 'aiDraftChat', message });
+  },
+
+  _advancePhase() {
+    const phaseIdx = DRAFT_PHASES.indexOf(this._draftPhase);
+    if (this._draftPhase === 'options') {
+      // Options phase: need a decision input — show prompt
+      const decision = prompt('What is your decision? Pick an option or describe your approach:');
+      if (decision && decision.trim()) {
+        this._addChatMessage('architect', `Decision: ${decision}`);
+        vscode.postMessage({ type: 'aiDraftDecide', decision });
+      }
+      return;
+    }
+    if (this._draftPhase === 'decide') {
+      // Generate the ADR
+      vscode.postMessage({ type: 'aiDraftGenerate' });
+      return;
+    }
+    // Advance to next phase
+    const nextPhase = DRAFT_PHASES[phaseIdx + 1];
+    if (nextPhase) {
+      vscode.postMessage({ type: 'aiDraftAdvance', message: nextPhase });
+    }
+  },
+
+  _resetDraft() {
+    this._draftActive = false;
+    this._draftPhase = 'describe';
+    const chatLog = document.getElementById('draft-chat-log');
+    if (chatLog) chatLog.innerHTML = '';
+    const preview = document.getElementById('draft-preview');
+    if (preview) preview.style.display = 'none';
+    const startRow = document.getElementById('draft-start-row');
+    const chatRow = document.getElementById('draft-chat-row');
+    const advanceBar = document.getElementById('draft-advance-bar');
+    if (startRow) startRow.style.display = 'flex';
+    if (chatRow) chatRow.style.display = 'none';
+    if (advanceBar) advanceBar.style.display = 'none';
+    this._updatePhaseBar('describe');
+    // Reset all phase steps to non-active
+    document.querySelectorAll('.draft-phase-step').forEach(el => {
+      el.classList.remove('active', 'completed');
+    });
+  },
+
+  _saveDraft() {
+    const editor = document.getElementById('draft-preview-editor');
+    if (!editor) return;
+    let content = editor.value;
+    // Strip markdown code fences if present
+    content = content.replace(/^```(?:markdown)?\n?/, '').replace(/\n?```$/, '');
+    vscode.postMessage({ type: 'aiDraftSave', content });
+  },
+
+  _updatePhaseBar(currentPhase) {
+    this._draftPhase = currentPhase;
+    const currentIdx = DRAFT_PHASES.indexOf(currentPhase);
+
+    document.querySelectorAll('.draft-phase-step').forEach((el, i) => {
+      el.classList.toggle('active', i === currentIdx);
+      el.classList.toggle('completed', i < currentIdx);
+    });
+
+    // Update advance button
+    const advanceBar = document.getElementById('draft-advance-bar');
+    const advanceBtn = document.getElementById('draft-advance-btn');
+    const advanceLabel = ADVANCE_LABELS[currentPhase];
+
+    if (advanceBar && advanceBtn) {
+      if (currentPhase === 'review') {
+        advanceBar.style.display = 'none';
+      } else {
+        advanceBar.style.display = 'flex';
+        if (currentPhase === 'options') {
+          advanceBtn.textContent = 'Make Decision →';
+        } else {
+          advanceBtn.textContent = advanceLabel || 'Next →';
+        }
+      }
+    }
+  },
+
+  _questionAnswers: {}, // { questionId: selectedLabel }
+
+  _clearLoading() {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (chatLog) {
+      const loading = chatLog.querySelector('.chat-msg-loading');
+      if (loading) loading.remove();
+    }
+  },
+
+  _showLoading(text) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+    this._clearLoading();
+    const msg = document.createElement('div');
+    msg.className = 'chat-msg chat-msg-ai chat-msg-loading';
+    msg.innerHTML = `<div class="chat-msg-role">AI</div><div class="chat-msg-body"><div class="ai-loading">${escapeHtml(text)}</div></div>`;
+    chatLog.appendChild(msg);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _addArchitectMessage(content) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+    const msg = document.createElement('div');
+    msg.className = 'chat-msg chat-msg-architect';
+    msg.innerHTML = `<div class="chat-msg-role">You</div><div class="chat-msg-body">${escapeHtml(content)}</div>`;
+    chatLog.appendChild(msg);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _addChoicePill(label) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+    const pill = document.createElement('div');
+    pill.className = 'chat-choice-pill-row';
+    pill.innerHTML = `<div class="chat-choice-pill">${escapeHtml(label)}</div>`;
+    chatLog.appendChild(pill);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  // ===== Structured Message Rendering =====
+
+  _renderStructuredMessages(messages) {
+    this._clearLoading();
+    const advanceBar = document.getElementById('draft-advance-bar');
+    if (advanceBar) advanceBar.style.display = 'none';
+
+    for (const msg of messages) {
+      switch (msg.kind) {
+        case 'text': this._renderTextMessage(msg.content); break;
+        case 'questions': this._renderQuestions(msg.intro, msg.questions); break;
+        case 'options': this._renderOptionCards(msg.intro, msg.options, msg.recommendation); break;
+        case 'impact': this._renderImpactTable(msg.summary, msg.impacts, msg.sideEffects); break;
+        case 'confirm': this._renderConfirmActions(msg.summary, msg.actions); break;
+        case 'draft': this._renderDraft(msg.content); break;
+      }
+    }
+  },
+
+  _renderTextMessage(content) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+    const msg = document.createElement('div');
+    msg.className = 'chat-msg chat-msg-ai';
+    msg.innerHTML = `<div class="chat-msg-role">AI</div><div class="chat-msg-body">${this._renderMarkdown(content)}</div>`;
+    chatLog.appendChild(msg);
+    this._wireAdrLinks(msg);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _renderQuestions(intro, questions) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+
+    const container = document.createElement('div');
+    container.className = 'chat-questions-block';
+
+    if (intro) {
+      container.innerHTML = `<div class="chat-questions-intro">${escapeHtml(intro)}</div>`;
+    }
+
+    this._questionAnswers = {};
+    const totalQuestions = questions.length;
+    const self = this;
+
+    questions.forEach((q) => {
+      const qDiv = document.createElement('div');
+      qDiv.className = 'chat-question-card';
+      qDiv.setAttribute('data-q-id', q.id);
+
+      const optionsHtml = q.options.map((opt, i) =>
+        `<button class="chat-q-option" data-q-id="${escapeHtml(q.id)}" data-opt-idx="${i}" data-opt-label="${escapeHtml(opt.label)}">
+          <span class="chat-q-option-label">${escapeHtml(opt.label)}</span>
+          ${opt.description ? `<span class="chat-q-option-desc">${escapeHtml(opt.description)}</span>` : ''}
+        </button>`
+      ).join('');
+
+      qDiv.innerHTML = `
+        <div class="chat-q-text">${escapeHtml(q.question)}</div>
+        <div class="chat-q-options">${optionsHtml}</div>
+        <div class="chat-q-other" style="display:none">
+          <input type="text" class="chat-q-other-input" placeholder="Type your answer..." />
+          <button class="chat-q-other-submit">OK</button>
+        </div>
+        <button class="chat-q-other-toggle">Other...</button>
+      `;
+
+      // Option click handlers
+      qDiv.querySelectorAll('.chat-q-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const label = btn.getAttribute('data-opt-label');
+          self._selectQuestionAnswer(q.id, label, qDiv, totalQuestions);
+        });
+      });
+
+      // Other toggle
+      const otherToggle = qDiv.querySelector('.chat-q-other-toggle');
+      const otherRow = qDiv.querySelector('.chat-q-other');
+      if (otherToggle && otherRow) {
+        otherToggle.addEventListener('click', () => {
+          otherRow.style.display = 'flex';
+          otherToggle.style.display = 'none';
+          otherRow.querySelector('input')?.focus();
+        });
+      }
+
+      // Other submit
+      const otherSubmit = qDiv.querySelector('.chat-q-other-submit');
+      const otherInput = qDiv.querySelector('.chat-q-other-input');
+      if (otherSubmit && otherInput) {
+        const submit = () => {
+          const val = otherInput.value.trim();
+          if (val) self._selectQuestionAnswer(q.id, val, qDiv, totalQuestions);
+        };
+        otherSubmit.addEventListener('click', submit);
+        otherInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+      }
+
+      container.appendChild(qDiv);
+    });
+
+    chatLog.appendChild(container);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _selectQuestionAnswer(qId, label, qDiv, totalQuestions) {
+    this._questionAnswers[qId] = label;
+
+    // Replace question card with answered state
+    qDiv.className = 'chat-question-card answered';
+    const qText = qDiv.querySelector('.chat-q-text')?.textContent || '';
+    qDiv.innerHTML = `
+      <div class="chat-q-answered">
+        <span class="chat-q-answered-text">${escapeHtml(qText)}</span>
+        <span class="chat-choice-pill">${escapeHtml(label)}</span>
+      </div>
+    `;
+
+    // Check if all questions answered
+    const answeredCount = Object.keys(this._questionAnswers).length;
+    if (answeredCount >= totalQuestions) {
+      // Auto-advance: send all answers to context phase
+      const answersText = Object.entries(this._questionAnswers)
+        .map(([id, ans]) => `${id}: ${ans}`)
+        .join('; ');
+      setTimeout(() => {
+        vscode.postMessage({ type: 'aiDraftAdvance', message: 'context', answers: answersText });
+      }, 300);
+    }
+  },
+
+  _renderOptionCards(intro, options, recommendation) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+
+    const container = document.createElement('div');
+    container.className = 'chat-options-block';
+
+    if (intro) {
+      container.innerHTML = `<div class="chat-options-intro">${this._renderMarkdown(intro)}</div>`;
+    }
+    if (recommendation) {
+      container.innerHTML += `<div class="chat-options-rec">${this._renderMarkdown(recommendation)}</div>`;
+    }
+
+    const self = this;
+    options.forEach((opt) => {
+      const card = document.createElement('div');
+      card.className = 'chat-option-card';
+
+      const effortClass = opt.effort === 'low' ? 'effort-low' : opt.effort === 'high' ? 'effort-high' : 'effort-medium';
+      const prosHtml = (opt.pros || []).map(p => `<li class="opt-pro">${escapeHtml(p)}</li>`).join('');
+      const consHtml = (opt.cons || []).map(c => `<li class="opt-con">${escapeHtml(c)}</li>`).join('');
+
+      card.innerHTML = `
+        <div class="opt-card-header">
+          <span class="opt-card-title">${escapeHtml(opt.title)}</span>
+          <span class="opt-card-effort ${effortClass}">${escapeHtml(opt.effort || 'medium')}</span>
+        </div>
+        <div class="opt-card-desc">${escapeHtml(opt.description)}</div>
+        ${prosHtml || consHtml ? `
+          <div class="opt-card-tradeoffs">
+            ${prosHtml ? `<ul class="opt-pros">${prosHtml}</ul>` : ''}
+            ${consHtml ? `<ul class="opt-cons">${consHtml}</ul>` : ''}
+          </div>
+        ` : ''}
+        ${opt.risk ? `<div class="opt-card-risk">Risk: ${escapeHtml(opt.risk)}</div>` : ''}
+        <button class="opt-choose-btn">Choose this option</button>
+      `;
+
+      card.querySelector('.opt-choose-btn')?.addEventListener('click', () => {
+        self._addChoicePill(`Decision: ${opt.title}`);
+        vscode.postMessage({ type: 'aiDraftDecide', decision: opt.title + ' — ' + opt.description });
+      });
+
+      container.appendChild(card);
+    });
+
+    // "My own approach" button
+    const ownBtn = document.createElement('button');
+    ownBtn.className = 'chat-own-approach-btn';
+    ownBtn.textContent = 'Describe my own approach...';
+    ownBtn.addEventListener('click', () => {
+      ownBtn.style.display = 'none';
+      const input = document.createElement('div');
+      input.className = 'chat-own-approach-row';
+      input.innerHTML = `<input type="text" class="draft-chat-input" placeholder="Describe your approach..." /><button class="ai-action-btn ai-action-primary">Go</button>`;
+      container.appendChild(input);
+      const inp = input.querySelector('input');
+      const btn = input.querySelector('button');
+      inp?.focus();
+      const submit = () => {
+        const val = inp?.value?.trim();
+        if (val) {
+          self._addChoicePill(`Decision: ${val}`);
+          vscode.postMessage({ type: 'aiDraftDecide', decision: val });
+        }
+      };
+      btn?.addEventListener('click', submit);
+      inp?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    });
+    container.appendChild(ownBtn);
+
+    chatLog.appendChild(container);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _renderImpactTable(summary, impacts, sideEffects) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+
+    const container = document.createElement('div');
+    container.className = 'chat-impact-block';
+
+    let html = '';
+    if (summary) html += `<div class="chat-impact-summary">${escapeHtml(summary)}</div>`;
+
+    if (impacts && impacts.length > 0) {
+      html += '<div class="chat-impact-table"><div class="chat-impact-table-header">Impact on Existing ADRs</div>';
+      impacts.forEach(imp => {
+        const relClass = imp.relationship === 'tension' ? 'rel-tension' : imp.relationship === 'supersedes' ? 'rel-supersedes' : 'rel-default';
+        html += `<div class="chat-impact-row">
+          <span class="chat-adr-link" data-adr-id="${escapeHtml(imp.adrId)}">${escapeHtml(imp.adrId)}</span>
+          <span class="chat-impact-rel ${relClass}">${escapeHtml(imp.relationship)}</span>
+          <span class="chat-impact-reason">${escapeHtml(imp.reason)}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    if (sideEffects && sideEffects.length > 0) {
+      html += '<div class="chat-side-effects"><div class="chat-side-effects-header">Side Effects</div>';
+      sideEffects.forEach(se => {
+        html += `<div class="chat-side-effect">${escapeHtml(se)}</div>`;
+      });
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    this._wireAdrLinks(container);
+    chatLog.appendChild(container);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _renderConfirmActions(summary, actions) {
+    const chatLog = document.getElementById('draft-chat-log');
+    if (!chatLog) return;
+
+    const container = document.createElement('div');
+    container.className = 'chat-confirm-block';
+
+    let html = `<div class="chat-confirm-text">${escapeHtml(summary)}</div><div class="chat-confirm-actions">`;
+    actions.forEach((a, i) => {
+      html += `<button class="chat-confirm-btn ${i === 0 ? 'primary' : ''}" data-action="${escapeHtml(a.action)}">${escapeHtml(a.label)}</button>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    const self = this;
+    container.querySelectorAll('.chat-confirm-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const action = btn.getAttribute('data-action');
+        self._addChoicePill(btn.textContent);
+        if (action === 'chat') {
+          // Show chat input for corrections
+          const chatRow = document.getElementById('draft-chat-row');
+          if (chatRow) chatRow.style.display = 'flex';
+          document.getElementById('draft-chat-input')?.focus();
+        } else {
+          vscode.postMessage({ type: 'aiDraftAction', action });
+        }
+      });
+    });
+
+    chatLog.appendChild(container);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  },
+
+  _renderDraft(content) {
+    const preview = document.getElementById('draft-preview');
+    const editor = document.getElementById('draft-preview-editor');
+    if (preview) preview.style.display = '';
+    if (editor) {
+      let cleaned = content.replace(/^```(?:markdown)?\n?/, '').replace(/\n?```$/, '');
+      editor.value = cleaned;
+    }
+    this._renderTextMessage('ADR generated! Review and edit below, then click **Save as ADR**.');
+  },
+
+  _wireAdrLinks(el) {
+    el.querySelectorAll('.chat-adr-link').forEach(link => {
+      link.addEventListener('click', () => {
+        const adrId = link.getAttribute('data-adr-id');
+        if (adrId) Graph.focusNode(adrId);
+      });
+    });
+  },
+
+  // ===== Message Handlers =====
+
+  handleDraftMessages(messages) {
+    this._renderStructuredMessages(messages);
+  },
+
+  handleDraftLoading(text) {
+    this._showLoading(text);
+  },
+
+  handleDraftPhase(phase) {
+    this._updatePhaseBar(phase);
+  },
+
+  handleDraftState(state) {
+    // Could highlight related ADRs in graph
+  },
+
+  // ===== Markdown Rendering =====
+  _renderMarkdown(content) {
+    let html = escapeHtml(content);
+    // Convert ADR-XXXX references to clickable links
+    html = html.replace(/ADR-(\d{4})/g, '<span class="chat-adr-link" data-adr-id="ADR-$1">ADR-$1</span>');
+    // Markdown basics
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
+      .replace(/^\d+\. (.*?)$/gm, '<li class="chat-li-num">$1</li>')
+      .replace(/^- (.*?)$/gm, '<li>$1</li>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    return `<p>${html}</p>`;
   }
 };
 
@@ -1705,6 +2221,14 @@ window.addEventListener('message', (event) => {
     Graph.focusNode(msg.adrId);
   } else if (msg.type === 'aiResult') {
     AiAssistant.handleResult(msg.content || '');
+  } else if (msg.type === 'draftMessages') {
+    AiAssistant.handleDraftMessages(msg.messages || []);
+  } else if (msg.type === 'draftLoading') {
+    AiAssistant.handleDraftLoading(msg.content || '');
+  } else if (msg.type === 'draftPhase') {
+    AiAssistant.handleDraftPhase(msg.phase);
+  } else if (msg.type === 'draftState') {
+    AiAssistant.handleDraftState(msg.state || {});
   }
 });
 
