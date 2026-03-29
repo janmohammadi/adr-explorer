@@ -10,11 +10,6 @@
   "categories": [
     "Visualization"
   ],
-  "capabilities": {
-    "languageModelAccess": {
-      "vendor": "*"
-    }
-  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:**/adr/*.md",
@@ -28,12 +23,6 @@
         "title": "Open ADR Explorer",
         "category": "ADR Explorer",
         "icon": "$(layout)"
-      },
-      {
-        "command": "adrExplorer.openAi",
-        "title": "Open AI Assistant",
-        "category": "ADR Explorer",
-        "icon": "$(robot)"
       },
       {
         "command": "adrExplorer.refresh",

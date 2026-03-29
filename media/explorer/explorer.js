@@ -59,7 +59,8 @@ mermaid.default.initialize({
 let allAdrs = [];
 let allEdges = [];
 let healthReport = null;
-let allTensions = [];
+let allInsights = [];
+let insightsLoading = false;
 let searchQuery = '';
 let activeStatuses = new Set();
 let activeTags = new Set();
@@ -826,7 +827,7 @@ const Graph = {
 // ===== Graph Toolbar Controls =====
 let graphGroupListOpen = false;
 let graphFilterListOpen = false;
-let graphTensionsListOpen = false;
+let graphInsightsListOpen = false;
 
 function initGraphToolbar() {
   // Group toggle
@@ -836,7 +837,7 @@ function initGraphToolbar() {
       e.stopPropagation();
       graphGroupListOpen = !graphGroupListOpen;
       graphFilterListOpen = false;
-      graphTensionsListOpen = false;
+      graphInsightsListOpen = false;
       renderGraphToolbarLists();
     });
   }
@@ -848,39 +849,43 @@ function initGraphToolbar() {
       e.stopPropagation();
       graphFilterListOpen = !graphFilterListOpen;
       graphGroupListOpen = false;
-      graphTensionsListOpen = false;
+      graphInsightsListOpen = false;
       renderGraphToolbarLists();
     });
   }
 
-  // Tensions toggle
-  const tensionsToggle = document.getElementById('graph-tensions-toggle');
-  if (tensionsToggle) {
-    tensionsToggle.addEventListener('click', (e) => {
+  // Insights toggle
+  const insightsToggle = document.getElementById('graph-insights-toggle');
+  if (insightsToggle) {
+    insightsToggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      graphTensionsListOpen = !graphTensionsListOpen;
+      graphInsightsListOpen = !graphInsightsListOpen;
       graphGroupListOpen = false;
       graphFilterListOpen = false;
       renderGraphToolbarLists();
+      // Trigger analysis on first open if no insights yet
+      if (graphInsightsListOpen && allInsights.length === 0 && !insightsLoading) {
+        vscode.postMessage({ type: 'analyzeInsights' });
+      }
     });
   }
 
   // Prevent clicks inside lists from closing them
   document.getElementById('graph-group-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('graph-filter-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
-  document.getElementById('graph-tensions-list')?.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('graph-insights-list')?.addEventListener('click', (e) => e.stopPropagation());
 }
 
 function renderGraphToolbarLists() {
   renderGraphGroupTagList();
   renderGraphFilterTagList();
-  renderTensionsList();
+  renderInsightsList();
   renderGroupLegend();
 
   // Update toggle active states
   const groupToggle = document.getElementById('graph-group-toggle');
   const filterToggle = document.getElementById('graph-filter-toggle');
-  const tensionsToggle = document.getElementById('graph-tensions-toggle');
+  const insightsToggle = document.getElementById('graph-insights-toggle');
   if (groupToggle) {
     groupToggle.classList.toggle('active', groupByTags.size > 0);
     groupToggle.classList.toggle('open', graphGroupListOpen);
@@ -889,15 +894,15 @@ function renderGraphToolbarLists() {
     filterToggle.classList.toggle('active', activeTags.size > 0);
     filterToggle.classList.toggle('open', graphFilterListOpen);
   }
-  if (tensionsToggle) {
-    tensionsToggle.classList.toggle('active', allTensions.length > 0);
-    tensionsToggle.classList.toggle('open', graphTensionsListOpen);
+  if (insightsToggle) {
+    insightsToggle.classList.toggle('active', allInsights.length > 0);
+    insightsToggle.classList.toggle('open', graphInsightsListOpen);
   }
 
   // Update badge counts
   const groupCount = document.getElementById('graph-group-count');
   const filterCount = document.getElementById('graph-filter-count');
-  const tensionsCount = document.getElementById('graph-tensions-count');
+  const insightsCount = document.getElementById('graph-insights-count');
   if (groupCount) {
     groupCount.textContent = groupByTags.size || '';
     groupCount.style.display = groupByTags.size > 0 ? 'inline-block' : 'none';
@@ -906,9 +911,9 @@ function renderGraphToolbarLists() {
     filterCount.textContent = activeTags.size || '';
     filterCount.style.display = activeTags.size > 0 ? 'inline-block' : 'none';
   }
-  if (tensionsCount) {
-    tensionsCount.textContent = allTensions.length || '';
-    tensionsCount.style.display = allTensions.length > 0 ? 'inline-block' : 'none';
+  if (insightsCount) {
+    insightsCount.textContent = allInsights.length || '';
+    insightsCount.style.display = allInsights.length > 0 ? 'inline-block' : 'none';
   }
 }
 
@@ -1024,41 +1029,86 @@ function renderGraphFilterTagList() {
   });
 }
 
-// ===== Tensions List =====
-function renderTensionsList() {
-  const listEl = document.getElementById('graph-tensions-list');
+// ===== Insights List =====
+function renderInsightsList() {
+  const listEl = document.getElementById('graph-insights-list');
   if (!listEl) return;
 
-  listEl.classList.toggle('open', graphTensionsListOpen);
-  if (!graphTensionsListOpen) return;
+  listEl.classList.toggle('open', graphInsightsListOpen);
+  if (!graphInsightsListOpen) return;
 
-  if (allTensions.length === 0) {
-    listEl.innerHTML = '<div class="tensions-empty">No tensions detected</div>';
+  if (insightsLoading) {
+    listEl.innerHTML = `
+      <div class="insights-loading">
+        <div class="insights-spinner"></div>
+        <span>Analyzing ADRs with AI...</span>
+      </div>`;
+    return;
+  }
+
+  if (allInsights.length === 0) {
+    listEl.innerHTML = `
+      <div class="insights-empty">
+        <div class="insights-empty-text">No insights yet</div>
+        <button class="insights-analyze-btn" id="insights-analyze-btn">Analyze with AI</button>
+      </div>`;
+    const analyzeBtn = document.getElementById('insights-analyze-btn');
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'analyzeInsights' });
+      });
+    }
     return;
   }
 
   const severityOrder = { high: 0, medium: 1, low: 2 };
-  const sorted = [...allTensions].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+  const sorted = [...allInsights].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-  listEl.innerHTML = sorted.map(tension => {
-    const severityIcon = tension.severity === 'high' ? '!!' : tension.severity === 'medium' ? '!' : 'i';
-    const adrLinks = tension.adrIds.map(id =>
-      `<span class="tension-adr-link" data-adr-id="${escapeHtml(id)}">${escapeHtml(id)}</span>`
+  const typeIcons = {
+    'contradiction': '\u26A0',
+    'missing-relation': '\u{1F517}',
+    'suggested-update': '\u{1F504}',
+    'staleness': '\u23F3',
+    'coherence': '\u{1F9E9}',
+  };
+
+  let html = `<div class="insights-header-row">
+    <span class="insights-result-count">${allInsights.length} insight${allInsights.length !== 1 ? 's' : ''}</span>
+    <button class="insights-reanalyze-btn" id="insights-reanalyze-btn" title="Re-analyze">Re-analyze</button>
+  </div>`;
+
+  html += sorted.map(insight => {
+    const icon = typeIcons[insight.type] || '\u{1F4A1}';
+    const adrLinks = insight.adrIds.map(id =>
+      `<span class="insight-adr-link" data-adr-id="${escapeHtml(id)}">${escapeHtml(id)}</span>`
     ).join(' ');
     return `
-      <div class="tension-item severity-${tension.severity}">
-        <div class="tension-icon">${severityIcon}</div>
-        <div class="tension-content">
-          <div class="tension-title">${escapeHtml(tension.title)}</div>
-          <div class="tension-desc">${escapeHtml(tension.description)}</div>
-          <div class="tension-adrs">${adrLinks}</div>
+      <div class="insight-item severity-${insight.severity}">
+        <div class="insight-icon">${icon}</div>
+        <div class="insight-content">
+          <div class="insight-title">${escapeHtml(insight.title)}</div>
+          <div class="insight-desc">${escapeHtml(insight.description)}</div>
+          <div class="insight-suggestion">${escapeHtml(insight.suggestion)}</div>
+          <div class="insight-adrs">${adrLinks}</div>
         </div>
       </div>
     `;
   }).join('');
 
+  listEl.innerHTML = html;
+
+  // Re-analyze button
+  const reanalyzeBtn = document.getElementById('insights-reanalyze-btn');
+  if (reanalyzeBtn) {
+    reanalyzeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({ type: 'analyzeInsights' });
+    });
+  }
+
   // Click handlers for ADR links
-  listEl.querySelectorAll('.tension-adr-link').forEach(el => {
+  listEl.querySelectorAll('.insight-adr-link').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       const adrId = el.getAttribute('data-adr-id');
@@ -1193,15 +1243,13 @@ function onSearchInput(e) {
 
 function applyFilters() {
   const filtered = getFilteredData();
-  // Augment with ghost node if What-If is active
-  const { adrs, edges } = WhatIf.getAugmentedData(filtered.adrs, filtered.edges);
+  const { adrs, edges } = filtered;
   const countEl = document.getElementById('record-count');
   if (countEl) {
-    const realCount = filtered.adrs.length;
-    countEl.textContent = `${realCount} of ${allAdrs.length} records` + (WhatIf._active ? ' (+1 what-if)' : '');
+    countEl.textContent = `${adrs.length} of ${allAdrs.length} records`;
   }
-  Timeline.render(filtered.adrs); // Timeline shows only real ADRs
-  Graph.render(adrs, edges); // Graph includes ghost
+  Timeline.render(adrs);
+  Graph.render(adrs, edges);
 
   // Keep graph toolbar badges in sync
   renderGraphToolbarLists();
@@ -1215,752 +1263,6 @@ function applyFilters() {
     }
   }
 }
-
-// ===== AI Assistant Module =====
-const DRAFT_PHASES = ['describe', 'context', 'options', 'decide', 'review'];
-const PHASE_LABELS = { describe: 'Describe', context: 'Context', options: 'Options', decide: 'Decide', review: 'Review' };
-const ADVANCE_LABELS = {
-  describe: 'Analyze Context & Impact →',
-  context: 'Explore Options →',
-  options: null, // options phase uses decision input instead
-  decide: 'Generate ADR →',
-  review: null,
-};
-
-const AiAssistant = {
-  _visible: false,
-  _mode: 'tools', // 'tools' or 'draft'
-  _draftPhase: 'describe',
-  _draftActive: false,
-
-  init() {
-    const toggle = document.getElementById('ai-toggle');
-    if (toggle) toggle.addEventListener('click', () => {
-      // Open AI panel in a separate tab
-      vscode.postMessage({ type: 'openAiPanel' });
-    });
-
-    // Mode tabs
-    document.getElementById('ai-mode-tools')?.addEventListener('click', () => this._setMode('tools'));
-    document.getElementById('ai-mode-draft')?.addEventListener('click', () => this._setMode('draft'));
-
-    // Tools mode buttons
-    document.getElementById('ai-gap-analysis')?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'aiGapAnalysis' });
-      this._showToolsLoading();
-    });
-
-    document.getElementById('ai-cluster-summary')?.addEventListener('click', () => {
-      const { adrs } = getFilteredData();
-      vscode.postMessage({ type: 'aiClusterSummary', adrIds: adrs.map(a => a.id) });
-      this._showToolsLoading();
-    });
-
-    document.getElementById('ai-stakeholder-brief')?.addEventListener('click', () => {
-      if (selectedAdrId) {
-        vscode.postMessage({ type: 'aiStakeholderBrief', adrIds: [selectedAdrId] });
-        this._showToolsLoading();
-      } else {
-        this._showToolsResult('Select an ADR first to generate a stakeholder brief.');
-      }
-    });
-
-    // Draft mode: Start
-    const startBtn = document.getElementById('draft-start-btn');
-    const startInput = document.getElementById('draft-start-input');
-    if (startBtn) startBtn.addEventListener('click', () => this._startDraft());
-    if (startInput) startInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._startDraft(); });
-
-    // Draft mode: Chat
-    const sendBtn = document.getElementById('draft-send-btn');
-    const chatInput = document.getElementById('draft-chat-input');
-    if (sendBtn) sendBtn.addEventListener('click', () => this._sendChat());
-    if (chatInput) chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sendChat(); });
-
-    // Draft mode: Advance phase
-    document.getElementById('draft-advance-btn')?.addEventListener('click', () => this._advancePhase());
-
-    // Draft mode: Reset
-    document.getElementById('draft-reset-btn')?.addEventListener('click', () => this._resetDraft());
-
-    // Draft mode: Save
-    document.getElementById('draft-save-btn')?.addEventListener('click', () => this._saveDraft());
-  },
-
-  _updateVisibility() {
-    const panel = document.getElementById('ai-panel');
-    if (panel) panel.style.display = this._visible ? 'flex' : 'none';
-    const toggle = document.getElementById('ai-toggle');
-    if (toggle) toggle.classList.toggle('active', this._visible);
-  },
-
-  _setMode(mode) {
-    this._mode = mode;
-    document.getElementById('ai-mode-tools')?.classList.toggle('active', mode === 'tools');
-    document.getElementById('ai-mode-draft')?.classList.toggle('active', mode === 'draft');
-    const toolsView = document.getElementById('ai-tools-view');
-    const draftView = document.getElementById('ai-draft-view');
-    if (toolsView) toolsView.style.display = mode === 'tools' ? '' : 'none';
-    if (draftView) draftView.style.display = mode === 'draft' ? '' : 'none';
-  },
-
-  // ===== Tools Mode =====
-  _showToolsLoading() {
-    const el = document.getElementById('ai-result');
-    if (el) el.innerHTML = '<div class="ai-loading">Thinking...</div>';
-  },
-
-  _showToolsResult(content) {
-    const el = document.getElementById('ai-result');
-    if (el) {
-      el.innerHTML = `<div class="ai-result-content">${this._renderMarkdown(content)}</div>`;
-    }
-  },
-
-  handleResult(content) {
-    this._showToolsResult(content);
-  },
-
-  // ===== Draft Mode =====
-  _startDraft() {
-    const input = document.getElementById('draft-start-input');
-    const description = input?.value || '';
-    if (!description.trim()) return;
-
-    this._draftActive = true;
-    this._draftPhase = 'describe';
-
-    // Add architect message to chat
-    this._addArchitectMessage(description);
-
-    // Switch to chat input
-    const startRow = document.getElementById('draft-start-row');
-    const chatRow = document.getElementById('draft-chat-row');
-    if (startRow) startRow.style.display = 'none';
-    if (chatRow) chatRow.style.display = 'flex';
-
-    // Clear input
-    if (input) input.value = '';
-
-    // Update phases
-    this._updatePhaseBar('describe');
-
-    // Send to extension
-    vscode.postMessage({ type: 'aiDraftStart', description });
-  },
-
-  _sendChat() {
-    const input = document.getElementById('draft-chat-input');
-    const message = input?.value || '';
-    if (!message.trim()) return;
-
-    this._addArchitectMessage(message);
-    if (input) input.value = '';
-
-    vscode.postMessage({ type: 'aiDraftChat', message });
-  },
-
-  _advancePhase() {
-    const phaseIdx = DRAFT_PHASES.indexOf(this._draftPhase);
-    if (this._draftPhase === 'options') {
-      // Options phase: need a decision input — show prompt
-      const decision = prompt('What is your decision? Pick an option or describe your approach:');
-      if (decision && decision.trim()) {
-        this._addChatMessage('architect', `Decision: ${decision}`);
-        vscode.postMessage({ type: 'aiDraftDecide', decision });
-      }
-      return;
-    }
-    if (this._draftPhase === 'decide') {
-      // Generate the ADR
-      vscode.postMessage({ type: 'aiDraftGenerate' });
-      return;
-    }
-    // Advance to next phase
-    const nextPhase = DRAFT_PHASES[phaseIdx + 1];
-    if (nextPhase) {
-      vscode.postMessage({ type: 'aiDraftAdvance', message: nextPhase });
-    }
-  },
-
-  _resetDraft() {
-    this._draftActive = false;
-    this._draftPhase = 'describe';
-    const chatLog = document.getElementById('draft-chat-log');
-    if (chatLog) chatLog.innerHTML = '';
-    const preview = document.getElementById('draft-preview');
-    if (preview) preview.style.display = 'none';
-    const startRow = document.getElementById('draft-start-row');
-    const chatRow = document.getElementById('draft-chat-row');
-    const advanceBar = document.getElementById('draft-advance-bar');
-    if (startRow) startRow.style.display = 'flex';
-    if (chatRow) chatRow.style.display = 'none';
-    if (advanceBar) advanceBar.style.display = 'none';
-    this._updatePhaseBar('describe');
-    // Reset all phase steps to non-active
-    document.querySelectorAll('.draft-phase-step').forEach(el => {
-      el.classList.remove('active', 'completed');
-    });
-  },
-
-  _saveDraft() {
-    const editor = document.getElementById('draft-preview-editor');
-    if (!editor) return;
-    let content = editor.value;
-    // Strip markdown code fences if present
-    content = content.replace(/^```(?:markdown)?\n?/, '').replace(/\n?```$/, '');
-    vscode.postMessage({ type: 'aiDraftSave', content });
-  },
-
-  _updatePhaseBar(currentPhase) {
-    this._draftPhase = currentPhase;
-    const currentIdx = DRAFT_PHASES.indexOf(currentPhase);
-
-    document.querySelectorAll('.draft-phase-step').forEach((el, i) => {
-      el.classList.toggle('active', i === currentIdx);
-      el.classList.toggle('completed', i < currentIdx);
-    });
-
-    // Update advance button
-    const advanceBar = document.getElementById('draft-advance-bar');
-    const advanceBtn = document.getElementById('draft-advance-btn');
-    const advanceLabel = ADVANCE_LABELS[currentPhase];
-
-    if (advanceBar && advanceBtn) {
-      if (currentPhase === 'review') {
-        advanceBar.style.display = 'none';
-      } else {
-        advanceBar.style.display = 'flex';
-        if (currentPhase === 'options') {
-          advanceBtn.textContent = 'Make Decision →';
-        } else {
-          advanceBtn.textContent = advanceLabel || 'Next →';
-        }
-      }
-    }
-  },
-
-  _questionAnswers: {}, // { questionId: selectedLabel }
-
-  _clearLoading() {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (chatLog) {
-      const loading = chatLog.querySelector('.chat-msg-loading');
-      if (loading) loading.remove();
-    }
-  },
-
-  _showLoading(text) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-    this._clearLoading();
-    const msg = document.createElement('div');
-    msg.className = 'chat-msg chat-msg-ai chat-msg-loading';
-    msg.innerHTML = `<div class="chat-msg-role">AI</div><div class="chat-msg-body"><div class="ai-loading">${escapeHtml(text)}</div></div>`;
-    chatLog.appendChild(msg);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _addArchitectMessage(content) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-    const msg = document.createElement('div');
-    msg.className = 'chat-msg chat-msg-architect';
-    msg.innerHTML = `<div class="chat-msg-role">You</div><div class="chat-msg-body">${escapeHtml(content)}</div>`;
-    chatLog.appendChild(msg);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _addChoicePill(label) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-    const pill = document.createElement('div');
-    pill.className = 'chat-choice-pill-row';
-    pill.innerHTML = `<div class="chat-choice-pill">${escapeHtml(label)}</div>`;
-    chatLog.appendChild(pill);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  // ===== Structured Message Rendering =====
-
-  _renderStructuredMessages(messages) {
-    this._clearLoading();
-    const advanceBar = document.getElementById('draft-advance-bar');
-    if (advanceBar) advanceBar.style.display = 'none';
-
-    for (const msg of messages) {
-      switch (msg.kind) {
-        case 'text': this._renderTextMessage(msg.content); break;
-        case 'questions': this._renderQuestions(msg.intro, msg.questions); break;
-        case 'options': this._renderOptionCards(msg.intro, msg.options, msg.recommendation); break;
-        case 'impact': this._renderImpactTable(msg.summary, msg.impacts, msg.sideEffects); break;
-        case 'confirm': this._renderConfirmActions(msg.summary, msg.actions); break;
-        case 'draft': this._renderDraft(msg.content); break;
-      }
-    }
-  },
-
-  _renderTextMessage(content) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-    const msg = document.createElement('div');
-    msg.className = 'chat-msg chat-msg-ai';
-    msg.innerHTML = `<div class="chat-msg-role">AI</div><div class="chat-msg-body">${this._renderMarkdown(content)}</div>`;
-    chatLog.appendChild(msg);
-    this._wireAdrLinks(msg);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _renderQuestions(intro, questions) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-
-    const container = document.createElement('div');
-    container.className = 'chat-questions-block';
-
-    if (intro) {
-      container.innerHTML = `<div class="chat-questions-intro">${escapeHtml(intro)}</div>`;
-    }
-
-    this._questionAnswers = {};
-    const totalQuestions = questions.length;
-    const self = this;
-
-    questions.forEach((q) => {
-      const qDiv = document.createElement('div');
-      qDiv.className = 'chat-question-card';
-      qDiv.setAttribute('data-q-id', q.id);
-
-      const optionsHtml = q.options.map((opt, i) =>
-        `<button class="chat-q-option" data-q-id="${escapeHtml(q.id)}" data-opt-idx="${i}" data-opt-label="${escapeHtml(opt.label)}">
-          <span class="chat-q-option-label">${escapeHtml(opt.label)}</span>
-          ${opt.description ? `<span class="chat-q-option-desc">${escapeHtml(opt.description)}</span>` : ''}
-        </button>`
-      ).join('');
-
-      qDiv.innerHTML = `
-        <div class="chat-q-text">${escapeHtml(q.question)}</div>
-        <div class="chat-q-options">${optionsHtml}</div>
-        <div class="chat-q-other" style="display:none">
-          <input type="text" class="chat-q-other-input" placeholder="Type your answer..." />
-          <button class="chat-q-other-submit">OK</button>
-        </div>
-        <button class="chat-q-other-toggle">Other...</button>
-      `;
-
-      // Option click handlers
-      qDiv.querySelectorAll('.chat-q-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const label = btn.getAttribute('data-opt-label');
-          self._selectQuestionAnswer(q.id, label, qDiv, totalQuestions);
-        });
-      });
-
-      // Other toggle
-      const otherToggle = qDiv.querySelector('.chat-q-other-toggle');
-      const otherRow = qDiv.querySelector('.chat-q-other');
-      if (otherToggle && otherRow) {
-        otherToggle.addEventListener('click', () => {
-          otherRow.style.display = 'flex';
-          otherToggle.style.display = 'none';
-          otherRow.querySelector('input')?.focus();
-        });
-      }
-
-      // Other submit
-      const otherSubmit = qDiv.querySelector('.chat-q-other-submit');
-      const otherInput = qDiv.querySelector('.chat-q-other-input');
-      if (otherSubmit && otherInput) {
-        const submit = () => {
-          const val = otherInput.value.trim();
-          if (val) self._selectQuestionAnswer(q.id, val, qDiv, totalQuestions);
-        };
-        otherSubmit.addEventListener('click', submit);
-        otherInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-      }
-
-      container.appendChild(qDiv);
-    });
-
-    chatLog.appendChild(container);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _selectQuestionAnswer(qId, label, qDiv, totalQuestions) {
-    this._questionAnswers[qId] = label;
-
-    // Replace question card with answered state
-    qDiv.className = 'chat-question-card answered';
-    const qText = qDiv.querySelector('.chat-q-text')?.textContent || '';
-    qDiv.innerHTML = `
-      <div class="chat-q-answered">
-        <span class="chat-q-answered-text">${escapeHtml(qText)}</span>
-        <span class="chat-choice-pill">${escapeHtml(label)}</span>
-      </div>
-    `;
-
-    // Check if all questions answered
-    const answeredCount = Object.keys(this._questionAnswers).length;
-    if (answeredCount >= totalQuestions) {
-      // Auto-advance: send all answers to context phase
-      const answersText = Object.entries(this._questionAnswers)
-        .map(([id, ans]) => `${id}: ${ans}`)
-        .join('; ');
-      setTimeout(() => {
-        vscode.postMessage({ type: 'aiDraftAdvance', message: 'context', answers: answersText });
-      }, 300);
-    }
-  },
-
-  _renderOptionCards(intro, options, recommendation) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-
-    const container = document.createElement('div');
-    container.className = 'chat-options-block';
-
-    if (intro) {
-      container.innerHTML = `<div class="chat-options-intro">${this._renderMarkdown(intro)}</div>`;
-    }
-    if (recommendation) {
-      container.innerHTML += `<div class="chat-options-rec">${this._renderMarkdown(recommendation)}</div>`;
-    }
-
-    const self = this;
-    options.forEach((opt) => {
-      const card = document.createElement('div');
-      card.className = 'chat-option-card';
-
-      const effortClass = opt.effort === 'low' ? 'effort-low' : opt.effort === 'high' ? 'effort-high' : 'effort-medium';
-      const prosHtml = (opt.pros || []).map(p => `<li class="opt-pro">${escapeHtml(p)}</li>`).join('');
-      const consHtml = (opt.cons || []).map(c => `<li class="opt-con">${escapeHtml(c)}</li>`).join('');
-
-      card.innerHTML = `
-        <div class="opt-card-header">
-          <span class="opt-card-title">${escapeHtml(opt.title)}</span>
-          <span class="opt-card-effort ${effortClass}">${escapeHtml(opt.effort || 'medium')}</span>
-        </div>
-        <div class="opt-card-desc">${escapeHtml(opt.description)}</div>
-        ${prosHtml || consHtml ? `
-          <div class="opt-card-tradeoffs">
-            ${prosHtml ? `<ul class="opt-pros">${prosHtml}</ul>` : ''}
-            ${consHtml ? `<ul class="opt-cons">${consHtml}</ul>` : ''}
-          </div>
-        ` : ''}
-        ${opt.risk ? `<div class="opt-card-risk">Risk: ${escapeHtml(opt.risk)}</div>` : ''}
-        <button class="opt-choose-btn">Choose this option</button>
-      `;
-
-      card.querySelector('.opt-choose-btn')?.addEventListener('click', () => {
-        self._addChoicePill(`Decision: ${opt.title}`);
-        vscode.postMessage({ type: 'aiDraftDecide', decision: opt.title + ' — ' + opt.description });
-      });
-
-      container.appendChild(card);
-    });
-
-    // "My own approach" button
-    const ownBtn = document.createElement('button');
-    ownBtn.className = 'chat-own-approach-btn';
-    ownBtn.textContent = 'Describe my own approach...';
-    ownBtn.addEventListener('click', () => {
-      ownBtn.style.display = 'none';
-      const input = document.createElement('div');
-      input.className = 'chat-own-approach-row';
-      input.innerHTML = `<input type="text" class="draft-chat-input" placeholder="Describe your approach..." /><button class="ai-action-btn ai-action-primary">Go</button>`;
-      container.appendChild(input);
-      const inp = input.querySelector('input');
-      const btn = input.querySelector('button');
-      inp?.focus();
-      const submit = () => {
-        const val = inp?.value?.trim();
-        if (val) {
-          self._addChoicePill(`Decision: ${val}`);
-          vscode.postMessage({ type: 'aiDraftDecide', decision: val });
-        }
-      };
-      btn?.addEventListener('click', submit);
-      inp?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-    });
-    container.appendChild(ownBtn);
-
-    chatLog.appendChild(container);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _renderImpactTable(summary, impacts, sideEffects) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-
-    const container = document.createElement('div');
-    container.className = 'chat-impact-block';
-
-    let html = '';
-    if (summary) html += `<div class="chat-impact-summary">${escapeHtml(summary)}</div>`;
-
-    if (impacts && impacts.length > 0) {
-      html += '<div class="chat-impact-table"><div class="chat-impact-table-header">Impact on Existing ADRs</div>';
-      impacts.forEach(imp => {
-        const relClass = imp.relationship === 'tension' ? 'rel-tension' : imp.relationship === 'supersedes' ? 'rel-supersedes' : 'rel-default';
-        html += `<div class="chat-impact-row">
-          <span class="chat-adr-link" data-adr-id="${escapeHtml(imp.adrId)}">${escapeHtml(imp.adrId)}</span>
-          <span class="chat-impact-rel ${relClass}">${escapeHtml(imp.relationship)}</span>
-          <span class="chat-impact-reason">${escapeHtml(imp.reason)}</span>
-        </div>`;
-      });
-      html += '</div>';
-    }
-
-    if (sideEffects && sideEffects.length > 0) {
-      html += '<div class="chat-side-effects"><div class="chat-side-effects-header">Side Effects</div>';
-      sideEffects.forEach(se => {
-        html += `<div class="chat-side-effect">${escapeHtml(se)}</div>`;
-      });
-      html += '</div>';
-    }
-
-    container.innerHTML = html;
-    this._wireAdrLinks(container);
-    chatLog.appendChild(container);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _renderConfirmActions(summary, actions) {
-    const chatLog = document.getElementById('draft-chat-log');
-    if (!chatLog) return;
-
-    const container = document.createElement('div');
-    container.className = 'chat-confirm-block';
-
-    let html = `<div class="chat-confirm-text">${escapeHtml(summary)}</div><div class="chat-confirm-actions">`;
-    actions.forEach((a, i) => {
-      html += `<button class="chat-confirm-btn ${i === 0 ? 'primary' : ''}" data-action="${escapeHtml(a.action)}">${escapeHtml(a.label)}</button>`;
-    });
-    html += '</div>';
-    container.innerHTML = html;
-
-    const self = this;
-    container.querySelectorAll('.chat-confirm-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const action = btn.getAttribute('data-action');
-        self._addChoicePill(btn.textContent);
-        if (action === 'chat') {
-          // Show chat input for corrections
-          const chatRow = document.getElementById('draft-chat-row');
-          if (chatRow) chatRow.style.display = 'flex';
-          document.getElementById('draft-chat-input')?.focus();
-        } else {
-          vscode.postMessage({ type: 'aiDraftAction', action });
-        }
-      });
-    });
-
-    chatLog.appendChild(container);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  },
-
-  _renderDraft(content) {
-    const preview = document.getElementById('draft-preview');
-    const editor = document.getElementById('draft-preview-editor');
-    if (preview) preview.style.display = '';
-    if (editor) {
-      let cleaned = content.replace(/^```(?:markdown)?\n?/, '').replace(/\n?```$/, '');
-      editor.value = cleaned;
-    }
-    this._renderTextMessage('ADR generated! Review and edit below, then click **Save as ADR**.');
-  },
-
-  _wireAdrLinks(el) {
-    el.querySelectorAll('.chat-adr-link').forEach(link => {
-      link.addEventListener('click', () => {
-        const adrId = link.getAttribute('data-adr-id');
-        if (adrId) Graph.focusNode(adrId);
-      });
-    });
-  },
-
-  // ===== Message Handlers =====
-
-  handleDraftMessages(messages) {
-    this._renderStructuredMessages(messages);
-  },
-
-  handleDraftLoading(text) {
-    this._showLoading(text);
-  },
-
-  handleDraftPhase(phase) {
-    this._updatePhaseBar(phase);
-  },
-
-  handleDraftState(state) {
-    // Could highlight related ADRs in graph
-  },
-
-  // ===== Markdown Rendering =====
-  _renderMarkdown(content) {
-    let html = escapeHtml(content);
-    // Convert ADR-XXXX references to clickable links
-    html = html.replace(/ADR-(\d{4})/g, '<span class="chat-adr-link" data-adr-id="ADR-$1">ADR-$1</span>');
-    // Markdown basics
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
-      .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
-      .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
-      .replace(/^\d+\. (.*?)$/gm, '<li class="chat-li-num">$1</li>')
-      .replace(/^- (.*?)$/gm, '<li>$1</li>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>');
-    return `<p>${html}</p>`;
-  }
-};
-
-// ===== What-If Scenario Module =====
-const WhatIf = {
-  _active: false,
-  _ghostAdr: null,
-
-  init() {
-    const toggle = document.getElementById('whatif-toggle');
-    const close = document.getElementById('whatif-close');
-    const apply = document.getElementById('whatif-apply');
-    const discard = document.getElementById('whatif-discard');
-    const save = document.getElementById('whatif-save');
-
-    if (toggle) toggle.addEventListener('click', () => this._showModal());
-    if (close) close.addEventListener('click', () => this._hideModal());
-    if (apply) apply.addEventListener('click', () => this._apply());
-    if (discard) discard.addEventListener('click', () => this._discard());
-    if (save) save.addEventListener('click', () => this._saveDraft());
-  },
-
-  _showModal() {
-    const modal = document.getElementById('whatif-modal');
-    if (modal) modal.style.display = 'flex';
-  },
-
-  _hideModal() {
-    const modal = document.getElementById('whatif-modal');
-    if (modal) modal.style.display = 'none';
-  },
-
-  _apply() {
-    const title = document.getElementById('whatif-title')?.value || 'Untitled Decision';
-    const status = document.getElementById('whatif-status')?.value || 'proposed';
-    const tagsRaw = document.getElementById('whatif-tags')?.value || '';
-    const supersedesRaw = document.getElementById('whatif-supersedes')?.value || '';
-    const relatesRaw = document.getElementById('whatif-relates')?.value || '';
-
-    const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
-    const supersedes = supersedesRaw.split(',').map(t => t.trim()).filter(Boolean);
-    const relatesTo = relatesRaw.split(',').map(t => t.trim()).filter(Boolean).map(id => ({ id }));
-
-    // Create ghost ADR with a special ID
-    const ghostId = 'ADR-GHOST';
-    this._ghostAdr = {
-      id: ghostId,
-      number: 9999,
-      title,
-      status,
-      date: new Date().toISOString().slice(0, 10),
-      deciders: [],
-      supersedes,
-      amends: [],
-      relatesTo,
-      tags,
-      filePath: '',
-      content: '',
-      _isGhost: true,
-    };
-
-    this._active = true;
-    this._hideModal();
-
-    // Show save button
-    const saveBtn = document.getElementById('whatif-save');
-    if (saveBtn) saveBtn.style.display = '';
-
-    // Re-render with ghost node
-    applyFilters();
-  },
-
-  _discard() {
-    this._ghostAdr = null;
-    this._active = false;
-    this._hideModal();
-    this._clearForm();
-
-    const saveBtn = document.getElementById('whatif-save');
-    if (saveBtn) saveBtn.style.display = 'none';
-
-    applyFilters();
-  },
-
-  _clearForm() {
-    ['whatif-title', 'whatif-tags', 'whatif-supersedes', 'whatif-relates'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    const status = document.getElementById('whatif-status');
-    if (status) status.value = 'proposed';
-  },
-
-  _saveDraft() {
-    if (!this._ghostAdr) return;
-    // Build frontmatter content and ask extension to create file
-    const adr = this._ghostAdr;
-    const content = `---
-title: "${adr.title}"
-status: ${adr.status}
-date: ${adr.date}
-deciders: []
-supersedes: [${adr.supersedes.map(s => `"${s}"`).join(', ')}]
-amends: []
-relates-to: [${adr.relatesTo.map(r => `"${r.id}"`).join(', ')}]
-tags: [${adr.tags.map(t => `"${t}"`).join(', ')}]
----
-
-# ${adr.title}
-
-## Context
-
-<!-- Describe the context and problem statement -->
-
-## Decision
-
-<!-- Describe the decision that was made -->
-
-## Consequences
-
-<!-- Describe the consequences of the decision -->
-`;
-    vscode.postMessage({ type: 'saveDraft', content });
-    this._discard();
-  },
-
-  getAugmentedData(adrs, edges) {
-    if (!this._active || !this._ghostAdr) return { adrs, edges };
-
-    const augAdrs = [...adrs, this._ghostAdr];
-    const augEdges = [...edges];
-    const allIds = new Set(augAdrs.map(a => a.id));
-
-    // Add ghost edges
-    for (const target of this._ghostAdr.supersedes) {
-      if (allIds.has(target)) {
-        augEdges.push({ source: this._ghostAdr.id, target, type: 'supersedes', _isGhost: true });
-      }
-    }
-    for (const rel of this._ghostAdr.relatesTo) {
-      if (allIds.has(rel.id)) {
-        augEdges.push({ source: this._ghostAdr.id, target: rel.id, type: 'relates-to', _isGhost: true });
-      }
-    }
-
-    return { adrs: augAdrs, edges: augEdges };
-  }
-};
 
 // ===== Analytics Module =====
 const Analytics = {
@@ -2213,23 +1515,18 @@ window.addEventListener('message', (event) => {
     allAdrs = msg.adrs || [];
     allEdges = msg.edges || [];
     healthReport = msg.health || null;
-    allTensions = msg.tensions || [];
     HealthDashboard.render(healthReport);
     Analytics.update(msg.lifecycle || null);
     renderGraphToolbarLists();
     applyFilters();
+  } else if (msg.type === 'insights') {
+    allInsights = msg.insights || [];
+    renderGraphToolbarLists();
+  } else if (msg.type === 'insightsLoading') {
+    insightsLoading = msg.loading;
+    renderGraphToolbarLists();
   } else if (msg.type === 'focusNode') {
     Graph.focusNode(msg.adrId);
-  } else if (msg.type === 'aiResult') {
-    AiAssistant.handleResult(msg.content || '');
-  } else if (msg.type === 'draftMessages') {
-    AiAssistant.handleDraftMessages(msg.messages || []);
-  } else if (msg.type === 'draftLoading') {
-    AiAssistant.handleDraftLoading(msg.content || '');
-  } else if (msg.type === 'draftPhase') {
-    AiAssistant.handleDraftPhase(msg.phase);
-  } else if (msg.type === 'draftState') {
-    AiAssistant.handleDraftState(msg.state || {});
   }
 });
 
@@ -2244,9 +1541,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initGraphToolbar();
   HealthDashboard.init();
   Analytics.init();
-  WhatIf.init();
-  AiAssistant.init();
-
   // Impact radius slider
   const impactSlider = document.getElementById('impact-radius-slider');
   const impactValue = document.getElementById('impact-radius-value');

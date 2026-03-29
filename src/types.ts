@@ -65,12 +65,13 @@ export interface HealthReportMsg {
   };
 }
 
-export interface TensionMsg {
+export interface InsightMsg {
   id: string;
-  type: 'tag-contradiction' | 'temporal-drift' | 'circular-dependency' | 'competing-proposals' | 'zombie';
+  type: 'contradiction' | 'missing-relation' | 'suggested-update' | 'staleness' | 'coherence';
   severity: 'high' | 'medium' | 'low';
   title: string;
   description: string;
+  suggestion: string;
   adrIds: string[];
 }
 
@@ -84,15 +85,13 @@ export interface LifecycleMetrics {
 }
 
 export type ExtensionToWebviewMessage =
-  | { type: 'update'; adrs: AdrRecord[]; edges: AdrEdge[]; health: HealthReportMsg; tensions: TensionMsg[]; lifecycle: LifecycleMetrics }
+  | { type: 'update'; adrs: AdrRecord[]; edges: AdrEdge[]; health: HealthReportMsg; lifecycle: LifecycleMetrics }
+  | { type: 'insights'; insights: InsightMsg[] }
+  | { type: 'insightsLoading'; loading: boolean }
   | { type: 'focusNode'; adrId: string };
 
 export type WebviewToExtensionMessage =
   | { type: 'openFile'; filePath: string }
-  | { type: 'saveDraft'; content: string }
-  | { type: 'aiClusterSummary'; adrIds: string[] }
-  | { type: 'aiGapAnalysis' }
-  | { type: 'aiStakeholderBrief'; adrIds: string[] }
-  | { type: 'aiGenerateDraft'; description: string }
   | { type: 'requestData' }
+  | { type: 'analyzeInsights' }
   | { type: 'ready' };

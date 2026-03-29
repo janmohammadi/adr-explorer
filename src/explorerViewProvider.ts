@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
 import { analyzeHealth } from './healthAnalyzer';
-import { detectTensions } from './conflictDetector';
+import { analyzeInsights } from './insightAnalyzer';
 import { computeLifecycleMetrics } from './lifecycleAnalyzer';
 import { getNonce } from './utils';
 
@@ -63,13 +63,8 @@ export class ExplorerViewProvider {
           );
         }
         break;
-      case 'saveDraft':
-        if (msg.content) {
-          this.saveDraftAdr(msg.content);
-        }
-        break;
-      case 'openAiPanel':
-        vscode.commands.executeCommand('adrExplorer.openAi');
+      case 'analyzeInsights':
+        this.runInsightAnalysis();
         break;
       case 'requestData':
       case 'ready':
@@ -78,58 +73,34 @@ export class ExplorerViewProvider {
     }
   }
 
-  private async saveDraftAdr(content: string): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) {
-      vscode.window.showErrorMessage('No workspace folder open');
-      return;
-    }
-
-    // Find next ADR number
-    const adrs = this.repository.getAllAdrs();
-    const maxNum = adrs.reduce((max, a) => Math.max(max, a.number), 0);
-    const nextNum = String(maxNum + 1).padStart(4, '0');
-    const fileName = `${nextNum}-draft-what-if.md`;
-
-    // Try to find an existing ADR directory
-    const adrDirs = ['docs/adr', 'docs/decisions', 'docs/architecture/decisions', 'adr'];
-    let targetDir: vscode.Uri | null = null;
-    for (const dir of adrDirs) {
-      const dirUri = vscode.Uri.joinPath(folders[0].uri, dir);
-      try {
-        await vscode.workspace.fs.stat(dirUri);
-        targetDir = dirUri;
-        break;
-      } catch {
-        // directory doesn't exist
-      }
-    }
-
-    if (!targetDir) {
-      targetDir = vscode.Uri.joinPath(folders[0].uri, 'docs', 'adr');
-      await vscode.workspace.fs.createDirectory(targetDir);
-    }
-
-    const fileUri = vscode.Uri.joinPath(targetDir, fileName);
-    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
-    const doc = await vscode.workspace.openTextDocument(fileUri);
-    await vscode.window.showTextDocument(doc);
-  }
-
   sendData(): void {
     const adrs = this.repository.getAllAdrs();
     const edges = this.repository.getAllEdges();
     const health = analyzeHealth(adrs, edges);
-    const tensions = detectTensions(adrs, edges);
     const lifecycle = computeLifecycleMetrics(adrs, edges);
     this.panel?.webview.postMessage({
       type: 'update',
       adrs,
       edges,
       health,
-      tensions,
       lifecycle,
     });
+  }
+
+  private async runInsightAnalysis(): Promise<void> {
+    this.panel?.webview.postMessage({ type: 'insightsLoading', loading: true });
+    try {
+      const adrs = this.repository.getAllAdrs();
+      const edges = this.repository.getAllEdges();
+      const tokenSource = new vscode.CancellationTokenSource();
+      const insights = await analyzeInsights(adrs, edges, tokenSource.token);
+      this.panel?.webview.postMessage({ type: 'insights', insights });
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`ADR Insight analysis failed: ${err.message}`);
+      this.panel?.webview.postMessage({ type: 'insights', insights: [] });
+    } finally {
+      this.panel?.webview.postMessage({ type: 'insightsLoading', loading: false });
+    }
   }
 
   private getPanelHtml(webview: vscode.Webview): string {
@@ -171,18 +142,6 @@ export class ExplorerViewProvider {
       </div>
 
       <div class="header-right">
-        <button id="ai-toggle" class="header-btn" title="AI Assistant">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
-          </svg>
-          AI
-        </button>
-        <button id="whatif-toggle" class="header-btn" title="What-If Scenario">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
-          </svg>
-          What If
-        </button>
         <button id="analytics-toggle" class="header-btn" title="Toggle Analytics">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
@@ -248,12 +207,13 @@ export class ExplorerViewProvider {
               Filter
               <span id="graph-filter-count" class="graph-toolbar-badge" style="display:none"></span>
             </button>
-            <button id="graph-tensions-toggle" class="graph-toolbar-btn">
+            <button id="graph-insights-toggle" class="graph-toolbar-btn">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+                <path d="M20 3v4"/><path d="M22 5h-4"/>
               </svg>
-              Tensions
-              <span id="graph-tensions-count" class="graph-toolbar-badge" style="display:none"></span>
+              AI Insights
+              <span id="graph-insights-count" class="graph-toolbar-badge" style="display:none"></span>
             </button>
             <button id="graph-group-toggle" class="graph-toolbar-btn">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -268,7 +228,7 @@ export class ExplorerViewProvider {
             <input id="impact-radius-slider" type="range" min="1" max="5" value="2" class="impact-radius-slider">
             <span id="impact-radius-value" class="impact-radius-value">2</span>
           </div>
-          <div id="graph-tensions-list" class="graph-toolbar-list tensions-list"></div>
+          <div id="graph-insights-list" class="graph-toolbar-list insights-list"></div>
           <div id="graph-filter-tag-list" class="graph-toolbar-list"></div>
           <div id="graph-group-tag-list" class="graph-toolbar-list"></div>
         </div>
@@ -309,50 +269,6 @@ export class ExplorerViewProvider {
       </div>
     </div>
   </div>
-  <!-- What-If Modal -->
-  <div id="whatif-modal" class="whatif-modal" style="display:none">
-    <div class="whatif-modal-content">
-      <div class="whatif-modal-header">
-        <span class="whatif-modal-title">What-If Scenario</span>
-        <button id="whatif-close" class="preview-close" title="Close">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </button>
-      </div>
-      <div class="whatif-modal-body">
-        <div class="whatif-field">
-          <label class="whatif-label">Title</label>
-          <input id="whatif-title" type="text" class="whatif-input" placeholder="New decision title..." />
-        </div>
-        <div class="whatif-field">
-          <label class="whatif-label">Status</label>
-          <select id="whatif-status" class="whatif-select">
-            <option value="proposed">Proposed</option>
-            <option value="accepted">Accepted</option>
-          </select>
-        </div>
-        <div class="whatif-field">
-          <label class="whatif-label">Tags (comma-separated)</label>
-          <input id="whatif-tags" type="text" class="whatif-input" placeholder="e.g. security, auth" />
-        </div>
-        <div class="whatif-field">
-          <label class="whatif-label">Supersedes (ADR IDs, comma-separated)</label>
-          <input id="whatif-supersedes" type="text" class="whatif-input" placeholder="e.g. ADR-0003, ADR-0007" />
-        </div>
-        <div class="whatif-field">
-          <label class="whatif-label">Relates to (ADR IDs, comma-separated)</label>
-          <input id="whatif-relates" type="text" class="whatif-input" placeholder="e.g. ADR-0001" />
-        </div>
-      </div>
-      <div class="whatif-modal-footer">
-        <button id="whatif-apply" class="whatif-btn whatif-btn-primary">Apply to Graph</button>
-        <button id="whatif-discard" class="whatif-btn">Discard</button>
-        <button id="whatif-save" class="whatif-btn whatif-btn-save" style="display:none">Save as Draft</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Analytics Overlay -->
   <div id="analytics-panel" class="analytics-panel" style="display:none">
     <div class="analytics-header">

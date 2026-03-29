@@ -1,21 +1,16 @@
 import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
 import { ExplorerViewProvider } from './explorerViewProvider';
-import { AiPanelProvider } from './aiPanelProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   const repository = new AdrRepository();
   await repository.initialize();
 
   const explorerView = new ExplorerViewProvider(context.extensionUri, repository);
-  const aiPanel = new AiPanelProvider(context.extensionUri, repository);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('adrExplorer.open', () => {
       explorerView.showPanel();
-    }),
-    vscode.commands.registerCommand('adrExplorer.openAi', () => {
-      aiPanel.showPanel();
     }),
     vscode.commands.registerCommand('adrExplorer.refresh', async () => {
       await repository.initialize();
