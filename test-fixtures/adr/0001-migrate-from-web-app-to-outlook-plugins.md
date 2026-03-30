@@ -13,7 +13,7 @@ tags: ["outlook", "plugin", "architecture", "frontend"]
 
 ## 1. Introduction
 
-This document outlines the strategic decision to replace the existing FastAPI web application interface with native Outlook plugin clients for the BankDirekt AI Assistant. Instead of users accessing the chatbot through a web browser, they will interact with it directly within their Outlook email client, providing a more seamless and integrated user experience.
+Replace the existing FastAPI web application interface with native Outlook plugin clients.
 
 **Note:** The implementation approach described in this ADR has evolved since its original acceptance. Please refer to these subsequent ADRs for current implementation details:
 * **[ADR-0006](0006-unified-officejs-plugin-architecture.md)** - Unified Office.js plugin architecture (supersedes the dual VSTO + Office.js approach originally proposed)
@@ -55,16 +55,10 @@ Develop native Outlook plugins to replace the web application, providing two imp
     * Aligns with Microsoft's Office add-in strategy
     * Positions for future Office 365 integrations (Teams, SharePoint)
 
-### Backend Compatibility
-
-* Existing Azure backend (Function App, Azure Search, Azure OpenAI) remains unchanged
-* Plugins will communicate with existing FastAPI Chat API endpoint
-* Authentication layer will be enhanced but core RAG pipeline is preserved
-
 ## 4. Potential Risks and Mitigation
 
 * **Deployment Complexity:** Enterprise Outlook plugin deployment varies across organizations
-    * **Mitigation:** Create detailed deployment guide for IT administrators; provide both centralized (Admin Center centralized deployment/Group Policy) and manual installation options (see ADR-0004)
+    * **Mitigation:** Support both centralized and manual deployment options
 * **Version Fragmentation:** Supporting two separate plugin technologies increases maintenance burden
     * **Mitigation:** Share common backend API; use similar UI patterns; allocate dedicated resources for each platform
 * **Legacy Outlook End-of-Life:** Microsoft may deprecate legacy Outlook, making VSTO investment short-lived
@@ -80,4 +74,4 @@ Develop native Outlook plugins to replace the web application, providing two imp
 
 ## 5. Conclusion
 
-Migrating from a standalone web application to native Outlook plugins is a strategic decision that significantly improves usability, adoption, and integration within the BankDirekt organization. While the dual-plugin approach (VSTO + Office.js) introduces technical complexity, it ensures comprehensive coverage of the entire user base and positions the system for long-term success. The existing Azure backend remains largely unchanged, preserving the investment in the RAG pipeline and AI infrastructure. This migration transforms the BankDirekt AI Assistant from a separate tool into an integral part of employees' daily workflow.
+Migrating from a standalone web application to native Outlook plugins is a strategic decision that significantly improves usability, adoption, and integration within the BankDirekt organization. While the dual-plugin approach (VSTO + Office.js) introduces technical complexity, it ensures comprehensive coverage of the entire user base and positions the system for long-term success. The existing Azure backend remains largely unchanged, preserving the investment in the RAG pipeline and AI infrastructure. 

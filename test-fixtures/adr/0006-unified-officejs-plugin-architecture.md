@@ -15,24 +15,11 @@ tags: ["outlook", "plugin", "officejs", "architecture", "aks"]
 
 ## 1. Introduction
 
-This document describes the strategic decision to abandon the dual-plugin approach (VSTO for legacy Outlook + Office.js for modern Outlook) in favor of a unified Office.js implementation that supports **both classic and modern Outlook clients**. Recent Microsoft updates have extended Office.js compatibility to legacy Outlook desktop versions (2016/2019/2021), eliminating the need for a separate .NET VSTO implementation. The plugin will be delivered as an iframe-embedded React Single Page Application (SPA) containerized on Azure Kubernetes Service (AKS), providing a consistent experience across all Outlook platforms with unified backend infrastructure.
+
 
 ### Historical Context: Why ADR-0003 Was Superseded
 
-**ADR-0003** (Modern Outlook Plugin Implementation using Office.js) was initially created to document the Office.js approach for modern Outlook clients (Outlook on the Web, new Outlook for Windows, Mac, mobile). At the time, there was uncertainty about Office.js support for legacy Outlook desktop versions (2016/2019/2021), which led to the creation of a parallel VSTO approach documented in ADR-0002.
-
-However, Microsoft quietly extended Office.js compatibility to legacy Outlook desktop clients through cumulative Windows updates. This discovery eliminated the justification for maintaining two separate implementations. Rather than update both ADR-0002 and ADR-0003 separately, this unified ADR-0006 consolidates both into a single coherent architecture that covers all Outlook platforms with a single Office.js codebase.
-
-**Key Technical Details from ADR-0003 Retained:**
-- Office.js 1.13+ and TypeScript 5.x technology stack requirements
-- React 18.x + Fluent UI React v9 for modern UI
-- Node.js 18.x LTS minimum version
-- Modern evergreen browser requirements
-- MSAL.js 2.x for EntraID authentication
-- Containerized hosting approach (now AKS-based instead of App Service)
-- Cross-platform testing considerations
-
-All of this remains valid and is incorporated into this ADR-0006 unified approach. ADR-0003 is kept in the repository for historical reference but should not be referenced for new development—use ADR-0006 instead.
+Microsoft extended Office.js support to legacy Outlook desktop versions, eliminating the need for separate VSTO and Office.js implementations.
 
 ## 2. Current Challenges
 
@@ -91,36 +78,7 @@ Develop a **single unified Office.js plugin** that works across all Outlook clie
 
 ### Hosting Architecture
 
-```
-Outlook Client (any platform)
-  └── Office.js Task Pane
-       └── <iframe src="https://<aks-ingress-domain>/plugin">
-            └── Traefik Ingress (AKS)
-                 └── Plugin UI Pod (NGINX)
-                      └── React SPA
-                           ├── Chat UI (Fluent UI components)
-                           ├── EntraID Auth (MSAL.js)
-                           └── API Client → Backend API Pod
-                                             └── FastAPI backend (EntraID protected)
 
-AKS Deployment Topology:
-AKS Cluster (Azure CNI Overlay)
-├── Namespace: app
-│   ├── Plugin UI Pod (2 replicas) - NGINX serving React SPA
-│   ├── Backend API Pod (2 replicas) - FastAPI with Gunicorn
-│   └── Function App CronJob - Daily content indexer
-├── Namespace: log
-│   ├── Langfuse Web Pod (2 replicas) - Observability UI
-│   ├── Langfuse Worker Pod - Background job processor
-│   ├── PostgreSQL StatefulSet - Metadata database (10Gi PVC)
-│   ├── ClickHouse StatefulSet - Analytics database (20Gi PVC)
-│   ├── Redis Deployment - Cache and job queue
-│   └── MinIO StatefulSet - S3-compatible object storage (50Gi PVC)
-└── Traefik Ingress Controller
-    ├── /plugin → Plugin UI Service
-    ├── /api → Backend API Service
-    └── /langfuse → Langfuse Web Service
-```
 
 ### Key Advantages
 

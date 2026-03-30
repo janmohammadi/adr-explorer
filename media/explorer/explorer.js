@@ -838,6 +838,7 @@ function initGraphToolbar() {
       graphGroupListOpen = !graphGroupListOpen;
       graphFilterListOpen = false;
       graphInsightsListOpen = false;
+
       renderGraphToolbarLists();
     });
   }
@@ -850,6 +851,7 @@ function initGraphToolbar() {
       graphFilterListOpen = !graphFilterListOpen;
       graphGroupListOpen = false;
       graphInsightsListOpen = false;
+
       renderGraphToolbarLists();
     });
   }
@@ -862,6 +864,7 @@ function initGraphToolbar() {
       graphInsightsListOpen = !graphInsightsListOpen;
       graphGroupListOpen = false;
       graphFilterListOpen = false;
+
       renderGraphToolbarLists();
       // Trigger analysis on first open if no insights yet
       if (graphInsightsListOpen && allInsights.length === 0 && !insightsLoading) {
@@ -1292,6 +1295,10 @@ const Analytics = {
     if (panel) panel.style.display = this._visible ? 'flex' : 'none';
     const toggle = document.getElementById('analytics-toggle');
     if (toggle) toggle.classList.toggle('active', this._visible);
+    if (this._visible && typeof Distill !== 'undefined') {
+      Distill._visible = false;
+      Distill._updateVisibility();
+    }
   },
 
   update(lifecycle) {
@@ -1508,6 +1515,311 @@ const HealthDashboard = {
   }
 };
 
+// ===== Distill Module =====
+const DISTILL_CATEGORY_LABELS = {
+  'verbose-filler': 'Filler',
+  'redundant-section': 'Redundant',
+  'excessive-alternatives': 'Too Many Alternatives',
+  'implementation-detail': 'Implementation Detail',
+  'generic-consequence': 'Generic',
+  'unnecessary-background': 'Unnecessary Background',
+};
+
+const Distill = {
+  _visible: false,
+  _suggestions: {},
+  _loading: {},
+  _reports: [],
+  _bulkLoading: false,
+  _progress: null,
+  _selectedAdrId: null,
+
+  init() {
+    const toggle = document.getElementById('distill-toggle');
+    const close = document.getElementById('distill-close');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        this._visible = !this._visible;
+        this._updateVisibility();
+        if (this._visible) this._renderSidebar();
+      });
+    }
+    if (close) {
+      close.addEventListener('click', () => {
+        this._visible = false;
+        this._updateVisibility();
+      });
+    }
+    document.getElementById('distill-all-btn')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'analyzeDistillAll' });
+    });
+    document.getElementById('distill-content-apply-all')?.addEventListener('click', () => {
+      if (this._selectedAdrId) {
+        vscode.postMessage({ type: 'applyDistillAll', adrId: this._selectedAdrId });
+      }
+    });
+  },
+
+  _updateVisibility() {
+    const panel = document.getElementById('distill-panel');
+    if (panel) panel.style.display = this._visible ? 'flex' : 'none';
+    const toggle = document.getElementById('distill-toggle');
+    if (toggle) toggle.classList.toggle('active', this._visible);
+    if (this._visible) {
+      Analytics._visible = false;
+      Analytics._updateVisibility();
+    }
+  },
+
+  updateAdrs() {
+    if (this._visible) {
+      this._renderSidebar();
+      if (this._selectedAdrId) this._renderContent(this._selectedAdrId);
+    }
+  },
+
+  onProgress(completed, total) {
+    this._progress = { completed, total };
+    this._renderProgress();
+  },
+
+  onBulkLoadingChange(loading) {
+    this._bulkLoading = loading;
+    if (!loading) this._progress = null;
+    this._renderProgress();
+    this._renderSidebar();
+  },
+
+  onBulkResults(reports) {
+    this._reports = reports;
+    for (const r of reports) {
+      this._suggestions[r.adrId] = r.suggestions;
+    }
+    this._renderSidebar();
+    if (this._selectedAdrId) this._renderContent(this._selectedAdrId);
+  },
+
+  onSuggestions(adrId, suggestions) {
+    this._suggestions[adrId] = suggestions;
+    this._renderSidebar();
+    if (this._selectedAdrId === adrId) this._renderContent(adrId);
+  },
+
+  onLoadingChange(adrId, loading) {
+    this._loading[adrId] = loading;
+    this._renderSidebar();
+    if (this._selectedAdrId === adrId) this._renderContent(adrId);
+  },
+
+  _renderProgress() {
+    const el = document.getElementById('distill-progress');
+    if (!el) return;
+    if (!this._progress && !this._bulkLoading) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    if (this._progress) {
+      const pct = Math.round((this._progress.completed / this._progress.total) * 100);
+      el.innerHTML = `
+        <span>Distilling ${this._progress.completed}/${this._progress.total}...</span>
+        <div class="distill-progress-bar">
+          <div class="distill-progress-fill" style="width:${pct}%"></div>
+        </div>
+      `;
+    } else {
+      el.innerHTML = '<div class="distill-loading"><div class="insights-spinner"></div> Preparing...</div>';
+    }
+  },
+
+  _renderSidebar() {
+    const list = document.getElementById('distill-adr-list');
+    if (!list) return;
+
+    if (allAdrs.length === 0) {
+      list.innerHTML = '<div class="distill-content-empty">No ADRs found</div>';
+      return;
+    }
+
+    const sorted = [...allAdrs].sort((a, b) => a.number - b.number);
+    list.innerHTML = sorted.map(adr => {
+      const suggestions = this._suggestions[adr.id] || [];
+      const count = suggestions.length;
+      const isSelected = adr.id === this._selectedAdrId;
+      const isLoading = this._loading[adr.id];
+      return `
+        <div class="distill-adr-item${isSelected ? ' selected' : ''}${count > 0 ? ' has-suggestions' : ''}" data-adr-id="${adr.id}">
+          <div class="distill-adr-item-info">
+            <div class="distill-adr-item-id">${escapeHtml(adr.id)}</div>
+            <div class="distill-adr-item-title">${escapeHtml(adr.title)}</div>
+          </div>
+          ${isLoading ? '<div class="insights-spinner"></div>' : ''}
+          ${count > 0 ? `<span class="distill-adr-item-badge">${count}</span>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.distill-adr-item').forEach(item => {
+      item.addEventListener('click', () => {
+        this._selectAdr(item.dataset.adrId);
+      });
+    });
+  },
+
+  _selectAdr(adrId) {
+    this._selectedAdrId = adrId;
+    this._renderSidebar();
+    if (!this._suggestions[adrId] && !this._loading[adrId]) {
+      vscode.postMessage({ type: 'analyzeDistill', adrId });
+    }
+    this._renderContent(adrId);
+  },
+
+  async _renderContent(adrId) {
+    const header = document.getElementById('distill-content-header');
+    const body = document.getElementById('distill-content-body');
+    const idEl = document.getElementById('distill-content-id');
+    const titleEl = document.getElementById('distill-content-title');
+    const countEl = document.getElementById('distill-content-count');
+    const applyAllBtn = document.getElementById('distill-content-apply-all');
+    if (!body) return;
+
+    const adr = allAdrs.find(a => a.id === adrId);
+    if (!adr) {
+      body.innerHTML = '<div class="distill-content-empty">ADR not found</div>';
+      return;
+    }
+
+    if (header) header.style.display = 'flex';
+    if (idEl) idEl.textContent = adr.id;
+    if (titleEl) titleEl.textContent = adr.title;
+
+    const suggestions = this._suggestions[adrId] || [];
+    if (countEl) {
+      countEl.textContent = this._loading[adrId]
+        ? 'Analyzing...'
+        : `${suggestions.length} suggestion${suggestions.length !== 1 ? 's' : ''}`;
+    }
+    if (applyAllBtn) applyAllBtn.style.display = suggestions.length > 0 ? '' : 'none';
+
+    if (this._loading[adrId]) {
+      body.innerHTML = '<div class="distill-loading"><div class="insights-spinner"></div> Distilling...</div>';
+      return;
+    }
+
+    // Render markdown with inline highlights
+    // Key: search for targets in the RAW markdown (where the LLM found them),
+    // inject HTML markers, then let marked parse the whole thing.
+    let rawContent = adr.content || '';
+
+    if (suggestions.length > 0) {
+      // Find fenced code block regions so we can skip highlighting inside them
+      const codeRegions = [];
+      const codeRegex = /^(`{3,}|~{3,}).*\n[\s\S]*?\n\1/gm;
+      let cm;
+      while ((cm = codeRegex.exec(rawContent)) !== null) {
+        codeRegions.push({ start: cm.index, end: cm.index + cm[0].length });
+      }
+      function isInsideCodeBlock(pos, len) {
+        for (const r of codeRegions) {
+          if (pos >= r.start && pos + len <= r.end) return true;
+          // Overlaps with code block
+          if (pos < r.end && pos + len > r.start) return true;
+        }
+        return false;
+      }
+
+      // Find targets in raw markdown, sort by position descending
+      const injections = [];
+      for (let i = 0; i < suggestions.length; i++) {
+        const s = suggestions[i];
+        const pos = rawContent.indexOf(s.target);
+        if (pos === -1) continue;
+        if (isInsideCodeBlock(pos, s.target.length)) continue;
+        injections.push({ pos, len: s.target.length, suggestion: s, num: i + 1 });
+      }
+      injections.sort((a, b) => b.pos - a.pos);
+
+      for (const inj of injections) {
+        const s = inj.suggestion;
+        const before = rawContent.slice(0, inj.pos);
+        const target = rawContent.slice(inj.pos, inj.pos + inj.len);
+        const after = rawContent.slice(inj.pos + inj.len);
+
+        // Build a block-level card div (marked passes HTML blocks through)
+        const card = '\n\n<div class="distill-inline-card severity-' + s.severity + '" data-suggestion-id="' + s.id + '">' +
+          '<div class="distill-item-header">' +
+            '<span class="distill-suggestion-num">' + inj.num + '</span>' +
+            '<span class="distill-category">' + (DISTILL_CATEGORY_LABELS[s.category] || s.category) + '</span>' +
+            '<span class="distill-severity distill-severity-' + s.severity + '">' + s.severity + '</span>' +
+            '<button class="distill-apply-btn" data-adr-id="' + adrId + '" data-suggestion-id="' + s.id + '">Apply</button>' +
+          '</div>' +
+          '<div class="distill-reason">' + escapeHtml(s.reason) + '</div>' +
+          (s.replacement
+            ? '<div class="distill-replacement">Replace with: &quot;' + escapeHtml(truncate(s.replacement, 200)) + '&quot;</div>'
+            : '<div class="distill-replacement delete">Will be removed</div>') +
+        '</div>\n\n';
+
+        // Wrap the target in <mark> (inline HTML — marked preserves it)
+        rawContent = before +
+          '<mark class="distill-highlight">' + target + '</mark>' +
+          card +
+          after;
+      }
+    }
+
+    const html = await marked.parse(rawContent);
+    body.innerHTML = `<div class="distill-rendered-content">${html}</div>`;
+
+    // Render mermaid blocks
+    const mermaidBlocks = body.querySelectorAll('code.language-mermaid');
+    for (const block of mermaidBlocks) {
+      const pre = block.parentElement;
+      if (!pre || pre.tagName !== 'PRE') continue;
+      const mermaidCode = block.textContent || '';
+      const containerId = `distill-mermaid-${++mermaidId}`;
+      const div = document.createElement('div');
+      div.className = 'mermaid';
+      div.id = containerId;
+      try {
+        const { svg } = await mermaid.default.render(containerId, mermaidCode);
+        div.innerHTML = svg;
+      } catch (e) {
+        div.innerHTML = `<pre style="color:#ef4444;font-size:11px">Mermaid render error: ${escapeHtml(String(e))}</pre>`;
+      }
+      pre.replaceWith(div);
+    }
+
+    // Wire apply buttons
+    body.querySelectorAll('.distill-apply-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({
+          type: 'applyDistill',
+          adrId: e.target.dataset.adrId,
+          suggestionId: e.target.dataset.suggestionId,
+        });
+      });
+    });
+
+    // Click badge → scroll to card
+    body.querySelectorAll('.distill-highlight-badge').forEach(badge => {
+      badge.addEventListener('click', () => {
+        const mark = badge.closest('.distill-highlight');
+        if (!mark) return;
+        const card = mark.nextElementSibling;
+        if (card && card.classList.contains('distill-inline-card')) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    });
+
+    if (suggestions.length === 0 && !this._loading[adrId]) {
+      body.innerHTML += '<div class="distill-clean-msg">No suggestions \u2014 this ADR looks clean.</div>';
+    }
+  },
+};
+
 // ===== Message Handling =====
 window.addEventListener('message', (event) => {
   const msg = event.data;
@@ -1517,6 +1829,7 @@ window.addEventListener('message', (event) => {
     healthReport = msg.health || null;
     HealthDashboard.render(healthReport);
     Analytics.update(msg.lifecycle || null);
+    Distill.updateAdrs();
     renderGraphToolbarLists();
     applyFilters();
   } else if (msg.type === 'insights') {
@@ -1525,6 +1838,16 @@ window.addEventListener('message', (event) => {
   } else if (msg.type === 'insightsLoading') {
     insightsLoading = msg.loading;
     renderGraphToolbarLists();
+  } else if (msg.type === 'distillSuggestions') {
+    Distill.onSuggestions(msg.adrId, msg.suggestions || []);
+  } else if (msg.type === 'distillLoading') {
+    Distill.onLoadingChange(msg.adrId, msg.loading);
+  } else if (msg.type === 'distillAll') {
+    Distill.onBulkResults(msg.reports || []);
+  } else if (msg.type === 'distillAllLoading') {
+    Distill.onBulkLoadingChange(msg.loading);
+  } else if (msg.type === 'distillAllProgress') {
+    Distill.onProgress(msg.completed, msg.total);
   } else if (msg.type === 'focusNode') {
     Graph.focusNode(msg.adrId);
   }
@@ -1541,6 +1864,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initGraphToolbar();
   HealthDashboard.init();
   Analytics.init();
+  Distill.init();
   // Impact radius slider
   const impactSlider = document.getElementById('impact-radius-slider');
   const impactValue = document.getElementById('impact-radius-value');

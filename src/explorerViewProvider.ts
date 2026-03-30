@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { AdrRepository } from './adrRepository';
 import { analyzeHealth } from './healthAnalyzer';
 import { analyzeInsights } from './insightAnalyzer';
+import { analyzeDistill, analyzeDistillAll, applySuggestion } from './distillAnalyzer';
+import { DistillSuggestion } from './types';
 import { computeLifecycleMetrics } from './lifecycleAnalyzer';
 import { getNonce } from './utils';
 
@@ -11,7 +13,8 @@ export class ExplorerViewProvider {
 
   constructor(
     private extensionUri: vscode.Uri,
-    private repository: AdrRepository
+    private repository: AdrRepository,
+    private diagnostics: vscode.DiagnosticCollection
   ) {}
 
   /** Opens or reveals the full explorer in an editor tab. */
@@ -54,7 +57,7 @@ export class ExplorerViewProvider {
     });
   }
 
-  private handleMessage(msg: { type: string; filePath?: string; content?: string }): void {
+  private handleMessage(msg: { type: string; filePath?: string; content?: string; adrId?: string; suggestionId?: string }): void {
     switch (msg.type) {
       case 'openFile':
         if (msg.filePath) {
@@ -65,6 +68,29 @@ export class ExplorerViewProvider {
         break;
       case 'analyzeInsights':
         this.runInsightAnalysis();
+        break;
+      case 'analyzeDistill':
+        if (msg.adrId) {
+          this.runDistillAnalysis(msg.adrId);
+        }
+        break;
+      case 'analyzeDistillAll':
+        this.runDistillAll();
+        break;
+      case 'applyDistill':
+        if (msg.adrId && msg.suggestionId) {
+          this.applyDistillSuggestion(msg.adrId, msg.suggestionId);
+        }
+        break;
+      case 'applyDistillAll':
+        if (msg.adrId) {
+          this.applyAllDistillSuggestions(msg.adrId);
+        }
+        break;
+      case 'openDistillAdr':
+        if (msg.adrId) {
+          this.openDistillAdr(msg.adrId);
+        }
         break;
       case 'requestData':
       case 'ready':
@@ -85,6 +111,179 @@ export class ExplorerViewProvider {
       health,
       lifecycle,
     });
+  }
+
+  /** Distill cache: suggestions keyed by adrId for apply operations */
+  private distillCache = new Map<string, DistillSuggestion[]>();
+
+  private async openDistillAdr(adrId: string): Promise<void> {
+    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
+    if (!adr) return;
+
+    // Open the file in the editor (beside the webview panel)
+    const doc = await vscode.workspace.openTextDocument(adr.filePath);
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
+
+    // Set diagnostics if we have cached suggestions
+    const suggestions = this.distillCache.get(adrId);
+    if (suggestions && suggestions.length > 0) {
+      this.setDistillDiagnostics(doc, suggestions);
+    }
+
+    // Auto-trigger analysis if not cached
+    if (!suggestions) {
+      this.runDistillAnalysis(adrId);
+    }
+  }
+
+  private setDistillDiagnostics(doc: vscode.TextDocument, suggestions: DistillSuggestion[]): void {
+    const text = doc.getText();
+    const diags: vscode.Diagnostic[] = [];
+
+    for (const s of suggestions) {
+      const idx = text.indexOf(s.target);
+      if (idx === -1) continue;
+
+      const startPos = doc.positionAt(idx);
+      const endPos = doc.positionAt(idx + s.target.length);
+      const range = new vscode.Range(startPos, endPos);
+
+      const diag = new vscode.Diagnostic(
+        range,
+        `[${s.category}] ${s.reason}`,
+        vscode.DiagnosticSeverity.Warning
+      );
+      diag.source = 'adr-distill';
+      // Store target + replacement so the code action can use them
+      diag.code = JSON.stringify({ target: s.target, replacement: s.replacement });
+      diags.push(diag);
+    }
+
+    this.diagnostics.set(doc.uri, diags);
+  }
+
+  private async runDistillAnalysis(adrId: string): Promise<void> {
+    this.panel?.webview.postMessage({ type: 'distillLoading', adrId, loading: true });
+    try {
+      const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
+      if (!adr) return;
+      const tokenSource = new vscode.CancellationTokenSource();
+      const suggestions = await analyzeDistill(adr, tokenSource.token);
+      this.distillCache.set(adrId, suggestions);
+      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions });
+
+      // Set diagnostics on the file if it's open
+      for (const doc of vscode.workspace.textDocuments) {
+        if (doc.uri.fsPath === adr.filePath) {
+          this.setDistillDiagnostics(doc, suggestions);
+          break;
+        }
+      }
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`ADR distill analysis failed: ${err.message}`);
+      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: [] });
+    } finally {
+      this.panel?.webview.postMessage({ type: 'distillLoading', adrId, loading: false });
+    }
+  }
+
+  private async runDistillAll(): Promise<void> {
+    this.panel?.webview.postMessage({ type: 'distillAllLoading', loading: true });
+    try {
+      const adrs = this.repository.getAllAdrs();
+      const tokenSource = new vscode.CancellationTokenSource();
+      const reports = await analyzeDistillAll(adrs, tokenSource.token, (completed, total) => {
+        this.panel?.webview.postMessage({ type: 'distillAllProgress', completed, total });
+      });
+      // Cache all results and set diagnostics
+      const adrsMap = new Map(adrs.map(a => [a.id, a]));
+      for (const report of reports) {
+        this.distillCache.set(report.adrId, report.suggestions);
+        const adr = adrsMap.get(report.adrId);
+        if (adr) {
+          try {
+            const doc = await vscode.workspace.openTextDocument(adr.filePath);
+            this.setDistillDiagnostics(doc, report.suggestions);
+          } catch { /* file may not be accessible */ }
+        }
+      }
+      this.panel?.webview.postMessage({ type: 'distillAll', reports });
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`ADR distill analysis failed: ${err.message}`);
+      this.panel?.webview.postMessage({ type: 'distillAll', reports: [] });
+    } finally {
+      this.panel?.webview.postMessage({ type: 'distillAllLoading', loading: false });
+    }
+  }
+
+  private async applyDistillSuggestion(adrId: string, suggestionId: string): Promise<void> {
+    const suggestions = this.distillCache.get(adrId);
+    const suggestion = suggestions?.find(s => s.id === suggestionId);
+    if (!suggestion) return;
+
+    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
+    if (!adr) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(adr.filePath);
+      const fullText = doc.getText();
+      const idx = fullText.indexOf(suggestion.target);
+      if (idx === -1) {
+        vscode.window.showWarningMessage('Could not find the target text — it may have already been changed.');
+        return;
+      }
+      const startPos = doc.positionAt(idx);
+      const endPos = doc.positionAt(idx + suggestion.target.length);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(doc.uri, new vscode.Range(startPos, endPos), suggestion.replacement);
+      await vscode.workspace.applyEdit(edit);
+      await doc.save();
+
+      // Remove applied suggestion from cache and update diagnostics
+      const remaining = suggestions!.filter(s => s.id !== suggestionId);
+      this.distillCache.set(adrId, remaining);
+      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: remaining });
+
+      // Refresh diagnostics on the updated doc
+      const updatedDoc = await vscode.workspace.openTextDocument(adr.filePath);
+      this.setDistillDiagnostics(updatedDoc, remaining);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to apply suggestion: ${err.message}`);
+    }
+  }
+
+  private async applyAllDistillSuggestions(adrId: string): Promise<void> {
+    const suggestions = this.distillCache.get(adrId);
+    if (!suggestions || suggestions.length === 0) return;
+
+    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
+    if (!adr) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(adr.filePath);
+      let content = doc.getText();
+
+      const located = suggestions
+        .map(s => ({ suggestion: s, idx: content.indexOf(s.target) }))
+        .filter(s => s.idx !== -1)
+        .sort((a, b) => b.idx - a.idx);
+
+      for (const { suggestion } of located) {
+        content = applySuggestion(content, suggestion);
+      }
+
+      const fullRange = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(doc.uri, fullRange, content);
+      await vscode.workspace.applyEdit(edit);
+      await doc.save();
+
+      this.distillCache.set(adrId, []);
+      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: [] });
+      this.diagnostics.delete(doc.uri);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to apply suggestions: ${err.message}`);
+    }
   }
 
   private async runInsightAnalysis(): Promise<void> {
@@ -142,6 +341,12 @@ export class ExplorerViewProvider {
       </div>
 
       <div class="header-right">
+        <button id="distill-toggle" class="header-btn" title="Toggle Distill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 3h6l-3 7h4l-5 8 1-5H8z"/>
+          </svg>
+          Distill
+        </button>
         <button id="analytics-toggle" class="header-btn" title="Toggle Analytics">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
@@ -291,6 +496,41 @@ export class ExplorerViewProvider {
       <div class="analytics-section">
         <div class="analytics-section-title">Tag Stability</div>
         <div id="stability-chart" class="analytics-stability"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Distill Overlay -->
+  <div id="distill-panel" class="distill-panel" style="display:none">
+    <div class="distill-panel-header">
+      <span class="distill-panel-title">Distill</span>
+      <button id="distill-close" class="preview-close" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="distill-panel-body">
+      <div class="distill-sidebar">
+        <div class="distill-sidebar-actions">
+          <button id="distill-all-btn" class="distill-all-btn">Distill All ADRs</button>
+        </div>
+        <div id="distill-progress" class="distill-progress" style="display:none"></div>
+        <div id="distill-adr-list" class="distill-adr-list"></div>
+      </div>
+      <div class="distill-content">
+        <div id="distill-content-header" class="distill-content-header" style="display:none">
+          <div class="distill-content-title-row">
+            <span id="distill-content-id" class="distill-content-id"></span>
+            <span id="distill-content-title" class="distill-content-title"></span>
+          </div>
+          <div class="distill-content-actions">
+            <span id="distill-content-count" class="distill-content-count"></span>
+            <button id="distill-content-apply-all" class="distill-apply-all-btn">Apply All</button>
+          </div>
+        </div>
+        <div id="distill-content-body" class="distill-content-body">
+          <div class="distill-content-empty">Select an ADR from the list to view suggestions</div>
+        </div>
       </div>
     </div>
   </div>

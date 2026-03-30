@@ -75,6 +75,32 @@ export interface InsightMsg {
   adrIds: string[];
 }
 
+export type DistillCategory =
+  | 'verbose-filler'
+  | 'redundant-section'
+  | 'excessive-alternatives'
+  | 'implementation-detail'
+  | 'generic-consequence'
+  | 'unnecessary-background';
+
+export interface DistillSuggestion {
+  id: string;
+  category: DistillCategory;
+  severity: 'high' | 'medium' | 'low';
+  /** The specific text or section to distill */
+  target: string;
+  /** Why this should be removed or condensed */
+  reason: string;
+  /** Suggested replacement (empty string means delete entirely) */
+  replacement: string;
+}
+
+export interface DistillReport {
+  adrId: string;
+  adrTitle: string;
+  suggestions: DistillSuggestion[];
+}
+
 export interface LifecycleMetrics {
   /** Decisions per month: { month: 'YYYY-MM', count: number }[] */
   velocity: { month: string; count: number }[];
@@ -88,10 +114,19 @@ export type ExtensionToWebviewMessage =
   | { type: 'update'; adrs: AdrRecord[]; edges: AdrEdge[]; health: HealthReportMsg; lifecycle: LifecycleMetrics }
   | { type: 'insights'; insights: InsightMsg[] }
   | { type: 'insightsLoading'; loading: boolean }
-  | { type: 'focusNode'; adrId: string };
+  | { type: 'focusNode'; adrId: string }
+  | { type: 'distillSuggestions'; adrId: string; suggestions: DistillSuggestion[] }
+  | { type: 'distillLoading'; adrId: string; loading: boolean }
+  | { type: 'distillAll'; reports: DistillReport[] }
+  | { type: 'distillAllLoading'; loading: boolean }
+  | { type: 'distillAllProgress'; completed: number; total: number };
 
 export type WebviewToExtensionMessage =
   | { type: 'openFile'; filePath: string }
   | { type: 'requestData' }
   | { type: 'analyzeInsights' }
+  | { type: 'analyzeDistill'; adrId: string }
+  | { type: 'analyzeDistillAll' }
+  | { type: 'applyDistill'; adrId: string; suggestionId: string }
+  | { type: 'applyDistillAll'; adrId: string }
   | { type: 'ready' };

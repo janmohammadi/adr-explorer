@@ -54,16 +54,7 @@ Adopt Langfuse (https://langfuse.com) as the unified platform for:
 
 ### Technical Implementation
 
-* **Langfuse Python SDK:** Integrated via LangChain callback handler in `backend/web_app/backend/main2.py`
-* **Trace Structure:**
-    * **Session:** Entire user conversation (replaces Blob Storage JSON files)
-    * **Trace:** Single chat interaction (user message → AI response)
-    * **Spans:** Sub-steps (retrieval, embedding, GPT completion)
-    * **Scores:** User feedback (thumbs up/down, custom ratings)
-* **Environment Variables:**
-    * `LANGFUSE_PUBLIC_KEY` - API authentication
-    * `LANGFUSE_SECRET_KEY` - API authentication
-    * `LANGFUSE_HOST` - Cloud or self-hosted instance URL
+Integration via LangChain callback handler with standard trace hierarchy (sessions, traces, spans) and environment-based configuration.
 
 ### Open Questions
 

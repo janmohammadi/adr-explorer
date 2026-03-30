@@ -13,7 +13,7 @@ tags: ["deployment", "outlook", "plugin", "infrastructure"]
 
 ## 1. Introduction
 
-This document addresses the deployment and distribution strategy for the unified Office.js Outlook plugin. Unlike the current web application which simply requires a URL, Outlook plugins must be installed on client machines or deployed through organizational infrastructure. The exact deployment approach remains uncertain and requires collaboration with BankDirekt's IT department to determine the most appropriate method based on their infrastructure, security policies, and user management practices.
+This ADR defines deployment options for the Office.js Outlook plugin, requiring collaboration with BankDirekt's IT department to select the appropriate method.
 
 **Update (2025-01-14):** Following ADR-0006, the dual-plugin approach (VSTO + Office.js) has been abandoned in favor of a unified Office.js implementation that supports all Outlook platforms. This simplifies deployment to a single mechanism instead of managing two separate deployment processes.
 
@@ -90,18 +90,7 @@ Define multiple deployment options for the Office.js plugin, with final selectio
   * SharePoint Online with App Catalog configured
   * Permissions to manage App Catalog
 
-#### Option D: Manual Manifest Sideloading (Development/Testing Only)
-* **Description:** Users manually load manifest.xml through Outlook settings
-* **Pros:**
-  * Useful for development and testing
-  * No infrastructure requirements
-  * Immediate deployment
-* **Cons:**
-  * **NOT suitable for production deployment**
-  * Requires user technical knowledge
-  * No centralized management or updates
-  * May be blocked by IT security policies
-* **Use Case:** Development and pilot testing only
+
 
 ## 4. Potential Risks and Mitigation
 
@@ -111,8 +100,7 @@ Define multiple deployment options for the Office.js plugin, with final selectio
     * **Mitigation:** Prepare multiple deployment options; be flexible; prioritize user coverage over perfect solution
 * **Security Policy Blockers:** Add-ins may be blocked by corporate security policies
     * **Mitigation:** Work with security team to whitelist add-ins and Azure endpoints; provide security documentation; conduct security audit of backend APIs and SPA
-* **User Resistance to Installation:** Users may not adopt plugin (if manual installation required)
-    * **Mitigation:** Prefer automated centralized deployment (Option A); provide clear value proposition; executive sponsorship; training sessions
+
 * **AKS Cluster Availability:** Plugin unavailable if cluster or pods fail
     * **Mitigation:** AKS auto-healing for pod failures; horizontal pod autoscaling (HPA) for high load; Azure Monitor alerts for cluster health; multi-replica deployments for plugin UI and backend API; document incident response procedures
 * **Container Update Failures:** Rolling updates may cause brief downtime
@@ -139,9 +127,7 @@ The following matrix will guide final deployment method selection:
 
 ## 6. Conclusion
 
-The deployment strategy for the unified Office.js Outlook plugin cannot be finalized without critical information from BankDirekt's IT department regarding available infrastructure, security policies, and deployment preferences. This ADR outlines all viable deployment options, along with a structured assessment process to determine the most appropriate approach.
 
-**Immediate action required:** Schedule infrastructure assessment meetings with IT stakeholders to answer the questions outlined in Phase 1. Once this information is gathered, the deployment method can be selected, and implementation can proceed with confidence.
 
 **Simplified by ADR-0006:** The unified Office.js approach eliminates the complexity of managing dual deployment mechanisms (VSTO + Office.js), reducing deployment effort by ~50% and simplifying support.
 
@@ -153,15 +139,7 @@ However, this assumption must be validated through the assessment process.
 ## Technical Specifications
 
 * **Deployment Target:** Single unified Office.js add-in (supports all Outlook platforms)
-* **Backend Infrastructure:** Azure Kubernetes Service (AKS)
-  - Plugin UI: NGINX serving React SPA (2 replicas)
-  - Backend API: FastAPI with Gunicorn (2 replicas)
-  - Function App: CronJob for daily content indexing (weekdays 07:00 UTC)
-  - Langfuse: Self-hosted observability stack (PostgreSQL, ClickHouse, Redis, MinIO)
-* **Container Orchestration:** Kubernetes with Traefik ingress controller
-* **Container Registry:** Azure Container Registry (ACR)
-* **Edge Security:** Azure Front Door Premium with WAF (deployed via pipeline)
-* **Manifest Schema:** VersionOverridesV1_1 (schema 1.12+)
+
 * **Manifest Distribution:** Microsoft 365 Admin Center Centralized Deployment (corrected 2026-01-28; see Update note in Section 1)
 * **Supported Outlook Clients:**
   * Outlook 2016/2019/2021 for Windows (desktop)
