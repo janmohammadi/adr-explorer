@@ -1647,14 +1647,16 @@ const Distill = {
       const count = suggestions.length;
       const isSelected = adr.id === this._selectedAdrId;
       const isLoading = this._loading[adr.id];
+      const isClean = !isLoading && adr.id in this._suggestions && count === 0;
       return `
-        <div class="distill-adr-item${isSelected ? ' selected' : ''}${count > 0 ? ' has-suggestions' : ''}" data-adr-id="${adr.id}">
+        <div class="distill-adr-item${isSelected ? ' selected' : ''}${count > 0 ? ' has-suggestions' : ''}${isClean ? ' is-clean' : ''}" data-adr-id="${adr.id}">
           <div class="distill-adr-item-info">
             <div class="distill-adr-item-id">${escapeHtml(adr.id)}</div>
             <div class="distill-adr-item-title">${escapeHtml(adr.title)}</div>
           </div>
           ${isLoading ? '<div class="insights-spinner"></div>' : ''}
           ${count > 0 ? `<span class="distill-adr-item-badge">${count}</span>` : ''}
+          ${isClean ? '<span class="distill-adr-item-clean">&#10003;</span>' : ''}
         </div>
       `;
     }).join('');
@@ -1669,6 +1671,8 @@ const Distill = {
   _selectAdr(adrId) {
     this._selectedAdrId = adrId;
     this._renderSidebar();
+    const body = document.getElementById('distill-content-body');
+    if (body) body.scrollTop = 0;
     if (!this._suggestions[adrId] && !this._loading[adrId]) {
       vscode.postMessage({ type: 'analyzeDistill', adrId });
     }
@@ -1701,11 +1705,6 @@ const Distill = {
         : `${suggestions.length} suggestion${suggestions.length !== 1 ? 's' : ''}`;
     }
     if (applyAllBtn) applyAllBtn.style.display = suggestions.length > 0 ? '' : 'none';
-
-    if (this._loading[adrId]) {
-      body.innerHTML = '<div class="distill-loading"><div class="insights-spinner"></div> Distilling...</div>';
-      return;
-    }
 
     // Render markdown with inline highlights
     // Key: search for targets in the RAW markdown (where the LLM found them),
@@ -1769,7 +1768,10 @@ const Distill = {
     }
 
     const html = await marked.parse(rawContent);
-    body.innerHTML = `<div class="distill-rendered-content">${html}</div>`;
+    const overlayHtml = this._loading[adrId]
+      ? '<div class="distill-overlay"><div class="distill-overlay-label"><div class="insights-spinner"></div> Analyzing...</div></div>'
+      : '';
+    body.innerHTML = `${overlayHtml}<div class="distill-rendered-content">${html}</div>`;
 
     // Render mermaid blocks
     const mermaidBlocks = body.querySelectorAll('code.language-mermaid');
@@ -1815,7 +1817,7 @@ const Distill = {
     });
 
     if (suggestions.length === 0 && !this._loading[adrId]) {
-      body.innerHTML += '<div class="distill-clean-msg">No suggestions \u2014 this ADR looks clean.</div>';
+      body.innerHTML = '<div class="distill-clean-banner"><span class="distill-clean-icon">&#10003;</span><span class="distill-clean-title">All clear</span><span class="distill-clean-subtitle">No suggestions — this ADR looks clean.</span></div>' + body.innerHTML;
     }
   },
 };

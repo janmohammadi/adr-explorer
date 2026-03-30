@@ -191,22 +191,35 @@ export class ExplorerViewProvider {
     this.panel?.webview.postMessage({ type: 'distillAllLoading', loading: true });
     try {
       const adrs = this.repository.getAllAdrs();
-      const tokenSource = new vscode.CancellationTokenSource();
-      const reports = await analyzeDistillAll(adrs, tokenSource.token, (completed, total) => {
-        this.panel?.webview.postMessage({ type: 'distillAllProgress', completed, total });
-      });
-      // Cache all results and set diagnostics
       const adrsMap = new Map(adrs.map(a => [a.id, a]));
-      for (const report of reports) {
-        this.distillCache.set(report.adrId, report.suggestions);
-        const adr = adrsMap.get(report.adrId);
-        if (adr) {
-          try {
-            const doc = await vscode.workspace.openTextDocument(adr.filePath);
-            this.setDistillDiagnostics(doc, report.suggestions);
-          } catch { /* file may not be accessible */ }
-        }
+      const tokenSource = new vscode.CancellationTokenSource();
+
+      // Mark all ADRs as loading
+      for (const adr of adrs) {
+        this.panel?.webview.postMessage({ type: 'distillLoading', adrId: adr.id, loading: true });
       }
+
+      const reports = await analyzeDistillAll(
+        adrs,
+        tokenSource.token,
+        (completed, total) => {
+          this.panel?.webview.postMessage({ type: 'distillAllProgress', completed, total });
+        },
+        async (report) => {
+          // Stream each result to the UI as it completes
+          this.distillCache.set(report.adrId, report.suggestions);
+          this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId: report.adrId, suggestions: report.suggestions });
+          this.panel?.webview.postMessage({ type: 'distillLoading', adrId: report.adrId, loading: false });
+          const adr = adrsMap.get(report.adrId);
+          if (adr) {
+            try {
+              const doc = await vscode.workspace.openTextDocument(adr.filePath);
+              this.setDistillDiagnostics(doc, report.suggestions);
+            } catch { /* file may not be accessible */ }
+          }
+        }
+      );
+
       this.panel?.webview.postMessage({ type: 'distillAll', reports });
     } catch (err: any) {
       vscode.window.showErrorMessage(`ADR distill analysis failed: ${err.message}`);

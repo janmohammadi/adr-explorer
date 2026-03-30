@@ -68,22 +68,41 @@ export async function analyzeDistill(
 export async function analyzeDistillAll(
   adrs: AdrRecord[],
   token: vscode.CancellationToken,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  onResult?: (report: DistillReport) => void
 ): Promise<DistillReport[]> {
   const model = await selectModel();
   const reports: DistillReport[] = [];
+  const CONCURRENCY = 3;
+  let completed = 0;
 
-  for (let i = 0; i < adrs.length; i++) {
-    if (token.isCancellationRequested) break;
+  async function processAdr(adr: AdrRecord) {
+    if (token.isCancellationRequested) return;
     try {
-      const suggestions = await runAnalysis(model, adrs[i], token);
-      if (suggestions.length > 0) {
-        reports.push({ adrId: adrs[i].id, adrTitle: adrs[i].title, suggestions });
-      }
+      const suggestions = await runAnalysis(model, adr, token);
+      const report: DistillReport = { adrId: adr.id, adrTitle: adr.title, suggestions };
+      reports.push(report);
+      onResult?.(report);
     } catch {
       // Skip ADRs that fail analysis
+      onResult?.({ adrId: adr.id, adrTitle: adr.title, suggestions: [] });
     }
-    onProgress?.(i + 1, adrs.length);
+    completed++;
+    onProgress?.(completed, adrs.length);
+  }
+
+  // Run with concurrency limit
+  const queue = [...adrs];
+  const active: Promise<void>[] = [];
+  while (queue.length > 0 || active.length > 0) {
+    while (active.length < CONCURRENCY && queue.length > 0 && !token.isCancellationRequested) {
+      const adr = queue.shift()!;
+      const p = processAdr(adr).then(() => { active.splice(active.indexOf(p), 1); });
+      active.push(p);
+    }
+    if (active.length > 0) {
+      await Promise.race(active);
+    }
   }
 
   return reports;
@@ -112,7 +131,12 @@ async function runAnalysis(
     fullText += chunk;
   }
 
-  const parsed = JSON.parse(fullText.trim());
+  let jsonText = fullText.trim();
+  const fenceMatch = jsonText.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
+  if (fenceMatch) {
+    jsonText = fenceMatch[1].trim();
+  }
+  const parsed = JSON.parse(jsonText);
   if (!Array.isArray(parsed)) {
     return [];
   }
