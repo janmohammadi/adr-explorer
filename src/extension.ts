@@ -12,7 +12,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const explorerView = new ExplorerViewProvider(context.extensionUri, repository, diagnostics);
 
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.text = '$(layout) ADR Explorer';
+  statusBarItem.tooltip = 'Open ADR Explorer';
+  statusBarItem.command = 'adrExplorer.open';
+  statusBarItem.show();
+
   context.subscriptions.push(
+    statusBarItem,
     vscode.commands.registerCommand('adrExplorer.open', () => {
       explorerView.showPanel();
     }),
@@ -44,8 +51,6 @@ export async function activate(context: vscode.ExtensionContext) {
     repository,
   );
 
-  // Open the explorer tab directly on activation
-  explorerView.showPanel();
 }
 
 export function deactivate() {}

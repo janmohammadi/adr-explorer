@@ -2,7 +2,7 @@
   "name": "adr-explorer",
   "displayName": "ADR Explorer",
   "description": "Visualize Architecture Decision Records with timeline and graph views",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "adr-explorer",
   "engines": {
     "vscode": "^1.93.0"
@@ -12,9 +12,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "workspaceContains:**/adr/*.md",
-    "workspaceContains:**/docs/adr/*.md",
-    "workspaceContains:**/docs/decisions/*.md"
+    "onStartupFinished"
   ],
   "contributes": {
     "commands": [

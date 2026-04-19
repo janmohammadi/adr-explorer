@@ -7,3 +7,9 @@ tsconfig.json
 esbuild.js
 **/*.map
 .gitignore
+.claude/**
+.agents/**
+ui-design-reference/**
+test/**
+skills-lock.json
+adr.md
