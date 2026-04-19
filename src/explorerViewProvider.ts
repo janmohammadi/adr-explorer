@@ -440,6 +440,14 @@ export class ExplorerViewProvider {
               Group
               <span id="graph-group-count" class="graph-toolbar-badge" style="display:none"></span>
             </button>
+            <button id="graph-chains-toggle" class="graph-toolbar-btn" title="Supersession chains">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              Chains
+              <span id="graph-chains-count" class="graph-toolbar-badge" style="display:none"></span>
+            </button>
           </div>
           <div id="impact-radius-control" class="impact-radius-control" style="display:none">
             <label class="impact-radius-label">Impact depth</label>
@@ -449,6 +457,7 @@ export class ExplorerViewProvider {
           <div id="graph-insights-list" class="graph-toolbar-list insights-list"></div>
           <div id="graph-filter-tag-list" class="graph-toolbar-list"></div>
           <div id="graph-group-tag-list" class="graph-toolbar-list"></div>
+          <div id="graph-chains-list" class="graph-toolbar-list chains-list"></div>
         </div>
         <div id="graph-group-legend" class="graph-group-legend"></div>
       </div>
@@ -497,18 +506,70 @@ export class ExplorerViewProvider {
         </svg>
       </button>
     </div>
+    <div class="analytics-tabs" role="tablist">
+      <button class="analytics-tab active" data-tab="overview" role="tab">Overview</button>
+      <button class="analytics-tab" data-tab="debt" role="tab">Debt</button>
+      <button class="analytics-tab" data-tab="areas" role="tab">Areas</button>
+      <button class="analytics-tab" data-tab="people" role="tab">People &amp; Trust</button>
+    </div>
     <div class="analytics-body">
-      <div class="analytics-section">
-        <div class="analytics-section-title">Decision Velocity</div>
-        <div id="velocity-chart" class="analytics-chart"></div>
+      <!-- Overview tab -->
+      <div class="analytics-tab-panel active" data-panel="overview">
+        <div class="analytics-section">
+          <div class="analytics-section-title">Status Over Time</div>
+          <div class="analytics-section-hint">Cumulative composition of decisions by status</div>
+          <div class="analytics-canvas-wrap"><canvas id="status-timeline-chart"></canvas></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-section-title">Decision Velocity</div>
+          <div id="velocity-chart" class="analytics-chart"></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-section-title">Lifecycle Funnel</div>
+          <div id="funnel-chart" class="analytics-funnel"></div>
+        </div>
       </div>
-      <div class="analytics-section">
-        <div class="analytics-section-title">Lifecycle Funnel</div>
-        <div id="funnel-chart" class="analytics-funnel"></div>
+
+      <!-- Debt tab -->
+      <div class="analytics-tab-panel" data-panel="debt">
+        <div class="analytics-section">
+          <div class="analytics-section-title">Decision Debt</div>
+          <div class="analytics-section-hint">Reviews that are overdue, expiring soon, expired, or stale</div>
+          <div id="debt-kpis" class="analytics-kpi-grid"></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-section-title">Debt by Area</div>
+          <div class="analytics-canvas-wrap"><canvas id="debt-by-tag-chart"></canvas></div>
+        </div>
       </div>
-      <div class="analytics-section">
-        <div class="analytics-section-title">Tag Stability</div>
-        <div id="stability-chart" class="analytics-stability"></div>
+
+      <!-- Areas tab -->
+      <div class="analytics-tab-panel" data-panel="areas">
+        <div class="analytics-section">
+          <div class="analytics-section-title">Architectural Hotspots</div>
+          <div class="analytics-section-hint">Decisions per tag per quarter — darker = more activity</div>
+          <div id="hotspots-heatmap" class="hotspot-grid"></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-section-title">Tag Stability</div>
+          <div id="stability-chart" class="analytics-stability"></div>
+        </div>
+      </div>
+
+      <!-- People & Trust tab -->
+      <div class="analytics-tab-panel" data-panel="people">
+        <div class="analytics-section">
+          <div class="analytics-section-title">Ownership</div>
+          <div id="ownership-stats" class="decider-stats"></div>
+          <div class="analytics-canvas-wrap"><canvas id="ownership-chart"></canvas></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-section-title">Confidence</div>
+          <div class="analytics-two-col">
+            <div class="analytics-canvas-wrap analytics-canvas-wrap-doughnut"><canvas id="confidence-chart"></canvas></div>
+            <div id="confidence-low-accepted" class="confidence-chip-list"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

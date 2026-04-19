@@ -2,11 +2,13 @@
 title: "Migrate from web application to Outlook plugin clients"
 status: accepted
 date: 2025-09-29
-deciders: ["Reza Janmohammadi"]
+deciders: ["Reza Janmohammadi", "Priya Shah"]
 supersedes: []
 amends: []
 relates-to: []
 tags: ["outlook", "plugin", "architecture", "frontend"]
+review-by: 2026-09-29
+confidence: high
 ---
 
 # Migrate from Web Application to Outlook Plugin Clients
@@ -39,21 +41,8 @@ Develop native Outlook plugins to replace the web application, providing two imp
 
 ### Key Advantages
 
-* **Seamless Workflow Integration:**
-    * Users access AI assistant directly within their email client
-    * Reduces context switching and improves productivity
-    * Sidebar/task pane integration keeps chatbot available while reading emails
-* **Enhanced User Experience:**
-    * Native look and feel consistent with Outlook UI
-    * Access to email context (current message, sender, subject) for more relevant responses
-    * Potential for proactive suggestions based on email content
-* **Improved Adoption:**
-    * Lower barrier to entry - no separate application to launch
-    * Leverage existing corporate Outlook deployment infrastructure
-    * Single sign-on through corporate credentials
-* **Future-Proof Architecture:**
-    * Aligns with Microsoft's Office add-in strategy
-    * Positions for future Office 365 integrations (Teams, SharePoint)
+* **Email Context Access:** AI can reference current message, sender, and subject for contextual responses
+* **Corporate SSO Integration:** Leverages existing authentication infrastructure
 
 ## 4. Potential Risks and Mitigation
 
@@ -67,11 +56,11 @@ Develop native Outlook plugins to replace the web application, providing two imp
     * **Mitigation:** Establish automated testing pipeline; prioritize most common client versions; use virtual machines for legacy testing
 * **User Resistance:** Some users may prefer web interface
     * **Mitigation:** Maintain web app for 3-month transition period; provide training materials; gather user feedback early
-* **Corporate Firewall/Proxy Issues:** Plugins may face network restrictions
-    * **Mitigation:** Work with IT to whitelist necessary Azure endpoints; provide troubleshooting documentation
+* **Network Restrictions:** Enterprise firewalls may block plugin connectivity
+    * **Mitigation:** Coordinate with IT teams for network access requirements
 * **Authentication Complexity:** SSO integration varies by organization
-    * **Mitigation:** Support multiple auth methods (OAuth2, SAML, JWT); provide fallback to username/password
+    * **Mitigation:** Design flexible authentication architecture
 
 ## 5. Conclusion
 
-Migrating from a standalone web application to native Outlook plugins is a strategic decision that significantly improves usability, adoption, and integration within the BankDirekt organization. While the dual-plugin approach (VSTO + Office.js) introduces technical complexity, it ensures comprehensive coverage of the entire user base and positions the system for long-term success. The existing Azure backend remains largely unchanged, preserving the investment in the RAG pipeline and AI infrastructure. 
+ 

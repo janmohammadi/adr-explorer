@@ -2,13 +2,15 @@
 title: "Azure Front Door for edge security"
 status: accepted
 date: 2025-12-10
-deciders: ["Reza Janmohammadi"]
+deciders: ["Marc Dubois", "Anna Kovač"]
 supersedes: []
 amends: []
 relates-to:
   - id: ADR-0008
     reason: "Front Door deployment is managed by the CI/CD pipeline, not standalone Bicep"
 tags: ["security", "infrastructure", "azure", "compliance"]
+review-by: 2026-12-10
+confidence: high
 ---
 
 # Azure Front Door for Edge Security

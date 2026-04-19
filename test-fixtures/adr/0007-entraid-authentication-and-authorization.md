@@ -2,13 +2,15 @@
 title: "EntraID authentication and authorization"
 status: accepted
 date: 2025-01-14
-deciders: ["Reza Janmohammadi"]
+deciders: ["Reza Janmohammadi", "Marc Dubois"]
 supersedes: []
 amends: []
 relates-to:
   - id: ADR-0006
     reason: "EntraID tokens are validated by the FastAPI backend hosted on the unified AKS architecture"
 tags: ["auth", "security", "entraid", "backend"]
+review-by: 2026-07-14
+confidence: high
 ---
 
 # EntraID Authentication and Authorization

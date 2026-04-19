@@ -108,6 +108,29 @@ export interface LifecycleMetrics {
   funnel: { proposed: number; accepted: number; amended: number; superseded: number; deprecated: number };
   /** Tag stability: lower churn = more stable */
   tagStability: { tag: string; total: number; churned: number; stability: number }[];
+  /** Cumulative count per status at each month */
+  statusOverTime: { month: string; proposed: number; accepted: number; superseded: number; deprecated: number }[];
+  /** Review/age backlog snapshot */
+  decisionDebt: {
+    overdue: number;
+    dueSoon: number;
+    expired: number;
+    stale: number;
+    byTag: { tag: string; overdue: number; dueSoon: number; stale: number }[];
+  };
+  /** Tag × quarter churn matrix (only tags with total >= 3). `quarters` spans the full range (earliest → latest ADR) so all rows align. */
+  hotspots: { quarters: string[]; rows: { tag: string; counts: number[] }[] };
+  /** Decider / ownership distribution */
+  ownership: {
+    deciders: { name: string; total: number; tags: string[] }[];
+    soloAuthoredCount: number;
+    totalCount: number;
+    busFactorOneTags: string[];
+  };
+  /** Confidence distribution + accepted-but-low-confidence ADRs */
+  confidence: { high: number; medium: number; low: number; none: number; lowAcceptedIds: string[] };
+  /** Supersession chains (length >= 2), oldest → newest */
+  supersessionChains: { chain: string[] }[];
 }
 
 export type ExtensionToWebviewMessage =

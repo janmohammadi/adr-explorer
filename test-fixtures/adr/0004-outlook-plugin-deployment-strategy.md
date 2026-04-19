@@ -2,11 +2,13 @@
 title: "Outlook plugin deployment and distribution strategy"
 status: accepted
 date: 2025-09-29
-deciders: ["Reza Janmohammadi"]
+deciders: ["Reza Janmohammadi", "Anna Kovač"]
 supersedes: []
 amends: [ADR-0006]
 relates-to: []
 tags: ["deployment", "outlook", "plugin", "infrastructure"]
+review-by: 2026-09-29
+confidence: high
 ---
 
 # Outlook Plugin Deployment and Distribution Strategy

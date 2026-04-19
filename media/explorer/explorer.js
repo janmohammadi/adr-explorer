@@ -4,6 +4,7 @@ const { zoom: d3Zoom, zoomIdentity } = require('d3-zoom');
 const { drag: d3Drag } = require('d3-drag');
 const { Marked } = require('marked');
 const mermaid = require('mermaid');
+const Chart = require('chart.js/auto').default || require('chart.js/auto');
 
 // @ts-ignore
 const vscode = acquireVsCodeApi();
@@ -828,17 +829,25 @@ const Graph = {
 let graphGroupListOpen = false;
 let graphFilterListOpen = false;
 let graphInsightsListOpen = false;
+let graphChainsListOpen = false;
+let allSupersessionChains = [];
 
 function initGraphToolbar() {
+  const closeAll = () => {
+    graphGroupListOpen = false;
+    graphFilterListOpen = false;
+    graphInsightsListOpen = false;
+    graphChainsListOpen = false;
+  };
+
   // Group toggle
   const groupToggle = document.getElementById('graph-group-toggle');
   if (groupToggle) {
     groupToggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      graphGroupListOpen = !graphGroupListOpen;
-      graphFilterListOpen = false;
-      graphInsightsListOpen = false;
-
+      const wasOpen = graphGroupListOpen;
+      closeAll();
+      graphGroupListOpen = !wasOpen;
       renderGraphToolbarLists();
     });
   }
@@ -848,10 +857,9 @@ function initGraphToolbar() {
   if (filterToggle) {
     filterToggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      graphFilterListOpen = !graphFilterListOpen;
-      graphGroupListOpen = false;
-      graphInsightsListOpen = false;
-
+      const wasOpen = graphFilterListOpen;
+      closeAll();
+      graphFilterListOpen = !wasOpen;
       renderGraphToolbarLists();
     });
   }
@@ -861,15 +869,25 @@ function initGraphToolbar() {
   if (insightsToggle) {
     insightsToggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      graphInsightsListOpen = !graphInsightsListOpen;
-      graphGroupListOpen = false;
-      graphFilterListOpen = false;
-
+      const wasOpen = graphInsightsListOpen;
+      closeAll();
+      graphInsightsListOpen = !wasOpen;
       renderGraphToolbarLists();
-      // Trigger analysis on first open if no insights yet
       if (graphInsightsListOpen && allInsights.length === 0 && !insightsLoading) {
         vscode.postMessage({ type: 'analyzeInsights' });
       }
+    });
+  }
+
+  // Chains toggle
+  const chainsToggle = document.getElementById('graph-chains-toggle');
+  if (chainsToggle) {
+    chainsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = graphChainsListOpen;
+      closeAll();
+      graphChainsListOpen = !wasOpen;
+      renderGraphToolbarLists();
     });
   }
 
@@ -877,18 +895,21 @@ function initGraphToolbar() {
   document.getElementById('graph-group-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('graph-filter-tag-list')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('graph-insights-list')?.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('graph-chains-list')?.addEventListener('click', (e) => e.stopPropagation());
 }
 
 function renderGraphToolbarLists() {
   renderGraphGroupTagList();
   renderGraphFilterTagList();
   renderInsightsList();
+  renderChainsList();
   renderGroupLegend();
 
   // Update toggle active states
   const groupToggle = document.getElementById('graph-group-toggle');
   const filterToggle = document.getElementById('graph-filter-toggle');
   const insightsToggle = document.getElementById('graph-insights-toggle');
+  const chainsToggle = document.getElementById('graph-chains-toggle');
   if (groupToggle) {
     groupToggle.classList.toggle('active', groupByTags.size > 0);
     groupToggle.classList.toggle('open', graphGroupListOpen);
@@ -901,11 +922,16 @@ function renderGraphToolbarLists() {
     insightsToggle.classList.toggle('active', allInsights.length > 0);
     insightsToggle.classList.toggle('open', graphInsightsListOpen);
   }
+  if (chainsToggle) {
+    chainsToggle.classList.toggle('active', allSupersessionChains.length > 0);
+    chainsToggle.classList.toggle('open', graphChainsListOpen);
+  }
 
   // Update badge counts
   const groupCount = document.getElementById('graph-group-count');
   const filterCount = document.getElementById('graph-filter-count');
   const insightsCount = document.getElementById('graph-insights-count');
+  const chainsCount = document.getElementById('graph-chains-count');
   if (groupCount) {
     groupCount.textContent = groupByTags.size || '';
     groupCount.style.display = groupByTags.size > 0 ? 'inline-block' : 'none';
@@ -917,6 +943,10 @@ function renderGraphToolbarLists() {
   if (insightsCount) {
     insightsCount.textContent = allInsights.length || '';
     insightsCount.style.display = allInsights.length > 0 ? 'inline-block' : 'none';
+  }
+  if (chainsCount) {
+    chainsCount.textContent = allSupersessionChains.length || '';
+    chainsCount.style.display = allSupersessionChains.length > 0 ? 'inline-block' : 'none';
   }
 }
 
@@ -1120,6 +1150,53 @@ function renderInsightsList() {
   });
 }
 
+// ===== Supersession Chains List =====
+function renderChainsList() {
+  const listEl = document.getElementById('graph-chains-list');
+  if (!listEl) return;
+
+  listEl.classList.toggle('open', graphChainsListOpen);
+  if (!graphChainsListOpen) return;
+
+  if (allSupersessionChains.length === 0) {
+    listEl.innerHTML = `
+      <div class="chains-empty">
+        <div class="chains-empty-text">No supersession chains found</div>
+        <div class="chains-empty-hint">Chains appear when one ADR supersedes another, forming a replacement history.</div>
+      </div>`;
+    return;
+  }
+
+  const header = `<div class="chains-header-row">
+    <span class="chains-result-count">${allSupersessionChains.length} chain${allSupersessionChains.length !== 1 ? 's' : ''}</span>
+    <span class="chains-hint">Sorted by depth — longest = most churn</span>
+  </div>`;
+
+  const body = allSupersessionChains.map((c, i) => {
+    const depth = c.chain.length;
+    const chips = c.chain.map((id, j) => `
+      <span class="chain-chip" data-adr-id="${escapeHtml(id)}" title="Focus ${escapeHtml(id)} in the graph">${escapeHtml(id)}</span>
+      ${j < c.chain.length - 1 ? '<span class="chain-arrow">&rarr;</span>' : ''}
+    `).join('');
+    return `
+      <div class="chain-item">
+        <div class="chain-rank">#${i + 1}</div>
+        <div class="chain-depth" title="Chain depth">d=${depth}</div>
+        <div class="chain-nodes">${chips}</div>
+      </div>`;
+  }).join('');
+
+  listEl.innerHTML = header + body;
+
+  listEl.querySelectorAll('.chain-chip').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const adrId = el.getAttribute('data-adr-id');
+      if (adrId) Graph.focusNode(adrId);
+    });
+  });
+}
+
 // ===== Group Legend Table =====
 function renderGroupLegend() {
   const legend = document.getElementById('graph-group-legend');
@@ -1271,6 +1348,9 @@ function applyFilters() {
 const Analytics = {
   _visible: false,
   _lifecycle: null,
+  _activeTab: 'overview',
+  _charts: {},
+  _renderedTabs: new Set(),
 
   init() {
     const toggle = document.getElementById('analytics-toggle');
@@ -1279,7 +1359,7 @@ const Analytics = {
       toggle.addEventListener('click', () => {
         this._visible = !this._visible;
         this._updateVisibility();
-        if (this._visible && this._lifecycle) this.render(this._lifecycle);
+        if (this._visible && this._lifecycle) this._renderActiveTab();
       });
     }
     if (close) {
@@ -1288,6 +1368,25 @@ const Analytics = {
         this._updateVisibility();
       });
     }
+
+    // Tab switching
+    document.querySelectorAll('.analytics-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        if (!tab || tab === this._activeTab) return;
+        this._activeTab = tab;
+        document.querySelectorAll('.analytics-tab').forEach(t => t.classList.toggle('active', t === btn));
+        document.querySelectorAll('.analytics-tab-panel').forEach(p => {
+          p.classList.toggle('active', p.getAttribute('data-panel') === tab);
+        });
+        if (this._lifecycle) this._renderActiveTab();
+      });
+    });
+
+    window.addEventListener('resize', () => {
+      if (!this._visible) return;
+      Object.values(this._charts).forEach(c => { try { c.resize(); } catch { /* noop */ } });
+    });
   },
 
   _updateVisibility() {
@@ -1303,33 +1402,97 @@ const Analytics = {
 
   update(lifecycle) {
     this._lifecycle = lifecycle;
-    if (this._visible) this.render(lifecycle);
+    // Invalidate cached renders so fresh data is drawn when each tab is next shown
+    this._renderedTabs.clear();
+    if (this._visible) this._renderActiveTab();
   },
 
-  render(lifecycle) {
-    if (!lifecycle) return;
-    this._renderVelocity(lifecycle.velocity);
-    this._renderFunnel(lifecycle.funnel);
-    this._renderStability(lifecycle.tagStability);
+  _renderActiveTab() {
+    if (!this._lifecycle) return;
+    const tab = this._activeTab;
+    if (this._renderedTabs.has(tab)) return;
+    switch (tab) {
+      case 'overview':
+        this._renderStatusTimeline(this._lifecycle.statusOverTime);
+        this._renderVelocity(this._lifecycle.velocity);
+        this._renderFunnel(this._lifecycle.funnel);
+        break;
+      case 'debt':
+        this._renderDecisionDebt(this._lifecycle.decisionDebt);
+        break;
+      case 'areas':
+        this._renderHotspots(this._lifecycle.hotspots);
+        this._renderStability(this._lifecycle.tagStability);
+        break;
+      case 'people':
+        this._renderOwnership(this._lifecycle.ownership);
+        this._renderConfidence(this._lifecycle.confidence);
+        break;
+    }
+    this._renderedTabs.add(tab);
+  },
+
+  _destroyChart(key) {
+    if (this._charts[key]) {
+      try { this._charts[key].destroy(); } catch { /* noop */ }
+      delete this._charts[key];
+    }
+  },
+
+  _chartDefaults() {
+    const css = getComputedStyle(document.documentElement);
+    const grid = css.getPropertyValue('--color-border').trim() || 'rgba(255,255,255,0.08)';
+    const text = css.getPropertyValue('--color-text-muted').trim() || '#8a8a9a';
+    return { grid, text };
+  },
+
+  _renderStatusTimeline(data) {
+    this._destroyChart('statusTimeline');
+    const canvas = document.getElementById('status-timeline-chart');
+    if (!canvas) return;
+    if (!data || data.length === 0) {
+      canvas.replaceWith(emptyEl('status-timeline-chart'));
+      return;
+    }
+    const { grid, text } = this._chartDefaults();
+    this._charts.statusTimeline = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.month),
+        datasets: [
+          { label: 'Accepted',   data: data.map(d => d.accepted),   borderColor: STATUS_COLORS.accepted,   backgroundColor: hexA(STATUS_COLORS.accepted, 0.35),   fill: true, tension: 0.25, stack: 's' },
+          { label: 'Proposed',   data: data.map(d => d.proposed),   borderColor: STATUS_COLORS.proposed,   backgroundColor: hexA(STATUS_COLORS.proposed, 0.35),   fill: true, tension: 0.25, stack: 's' },
+          { label: 'Superseded', data: data.map(d => d.superseded), borderColor: STATUS_COLORS.superseded, backgroundColor: hexA(STATUS_COLORS.superseded, 0.35), fill: true, tension: 0.25, stack: 's' },
+          { label: 'Deprecated', data: data.map(d => d.deprecated), borderColor: STATUS_COLORS.deprecated, backgroundColor: hexA(STATUS_COLORS.deprecated, 0.35), fill: true, tension: 0.25, stack: 's' },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: { legend: { labels: { color: text } } },
+        scales: {
+          x: { stacked: true, ticks: { color: text, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
+          y: { stacked: true, ticks: { color: text, precision: 0 }, grid: { color: grid } },
+        },
+      },
+    });
   },
 
   _renderVelocity(velocity) {
     const container = document.getElementById('velocity-chart');
     if (!container) return;
-
     if (!velocity || velocity.length === 0) {
       container.innerHTML = '<div class="analytics-empty">No data</div>';
       return;
     }
-
     const maxCount = Math.max(...velocity.map(v => v.count), 1);
     const barWidth = Math.max(12, Math.min(40, (container.clientWidth - 40) / velocity.length - 2));
-
     container.innerHTML = `
       <div class="velocity-bars">
         ${velocity.map(v => {
           const height = Math.max(2, (v.count / maxCount) * 80);
-          const label = v.month.slice(5); // MM only
+          const label = v.month.slice(5);
           return `
             <div class="velocity-bar-group" title="${v.month}: ${v.count} decision${v.count !== 1 ? 's' : ''}">
               <div class="velocity-bar" style="height:${height}px;width:${barWidth}px"></div>
@@ -1344,8 +1507,7 @@ const Analytics = {
 
   _renderFunnel(funnel) {
     const container = document.getElementById('funnel-chart');
-    if (!container) return;
-
+    if (!container || !funnel) return;
     const stages = [
       { label: 'Proposed', value: funnel.proposed, color: 'var(--color-proposed)' },
       { label: 'Accepted', value: funnel.accepted, color: 'var(--color-accepted)' },
@@ -1354,7 +1516,6 @@ const Analytics = {
       { label: 'Deprecated', value: funnel.deprecated, color: 'var(--color-deprecated)' },
     ];
     const maxVal = Math.max(...stages.map(s => s.value), 1);
-
     container.innerHTML = stages.map(stage => {
       const width = Math.max(4, (stage.value / maxVal) * 100);
       return `
@@ -1372,12 +1533,10 @@ const Analytics = {
   _renderStability(tagStability) {
     const container = document.getElementById('stability-chart');
     if (!container) return;
-
     if (!tagStability || tagStability.length === 0) {
       container.innerHTML = '<div class="analytics-empty">No tags</div>';
       return;
     }
-
     container.innerHTML = tagStability.map(t => {
       const color = t.stability >= 80 ? '#10b981' : t.stability >= 50 ? '#f59e0b' : '#ef4444';
       return `
@@ -1390,8 +1549,240 @@ const Analytics = {
         </div>
       `;
     }).join('');
-  }
+  },
+
+  _renderDecisionDebt(debt) {
+    const kpiContainer = document.getElementById('debt-kpis');
+    if (kpiContainer) {
+      if (!debt) {
+        kpiContainer.innerHTML = '<div class="analytics-empty">No data</div>';
+      } else {
+        const tiles = [
+          { label: 'Overdue reviews',  value: debt.overdue,  cls: 'kpi-danger'  },
+          { label: 'Due soon',         value: debt.dueSoon,  cls: 'kpi-warn'    },
+          { label: 'Expired',          value: debt.expired,  cls: 'kpi-danger'  },
+          { label: 'Stale (>1yr)',     value: debt.stale,    cls: 'kpi-neutral' },
+        ];
+        kpiContainer.innerHTML = tiles.map(t => `
+          <div class="analytics-kpi ${t.cls}">
+            <div class="analytics-kpi-value">${t.value}</div>
+            <div class="analytics-kpi-label">${t.label}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    this._destroyChart('debtByTag');
+    const canvas = document.getElementById('debt-by-tag-chart');
+    if (!canvas) return;
+    const rows = (debt && debt.byTag) || [];
+    if (rows.length === 0) {
+      canvas.replaceWith(emptyEl('debt-by-tag-chart'));
+      return;
+    }
+    const { grid, text } = this._chartDefaults();
+    this._charts.debtByTag = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.tag),
+        datasets: [
+          { label: 'Overdue',  data: rows.map(r => r.overdue),  backgroundColor: '#ef4444' },
+          { label: 'Due soon', data: rows.map(r => r.dueSoon),  backgroundColor: '#f59e0b' },
+          { label: 'Stale',    data: rows.map(r => r.stale),    backgroundColor: '#6b7280' },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: text } } },
+        scales: {
+          x: { stacked: true, ticks: { color: text, precision: 0 }, grid: { color: grid } },
+          y: { stacked: true, ticks: { color: text }, grid: { color: grid } },
+        },
+      },
+    });
+  },
+
+  _renderHotspots(hotspots) {
+    const container = document.getElementById('hotspots-heatmap');
+    if (!container) return;
+    if (!hotspots || !hotspots.rows || hotspots.rows.length === 0) {
+      container.innerHTML = '<div class="analytics-empty">No tags with enough activity</div>';
+      return;
+    }
+    const { quarters, rows } = hotspots;
+    const max = Math.max(1, ...rows.flatMap(r => r.counts));
+    const intensity = n => {
+      if (n === 0) return 0;
+      const ratio = n / max;
+      if (ratio >= 0.8) return 4;
+      if (ratio >= 0.55) return 3;
+      if (ratio >= 0.3) return 2;
+      return 1;
+    };
+    const header = `<div class="hotspot-row hotspot-row-header">
+      <div class="hotspot-tag"></div>
+      ${quarters.map(q => `<div class="hotspot-cell hotspot-cell-header">${q}</div>`).join('')}
+    </div>`;
+    const body = rows.map(r => `
+      <div class="hotspot-row">
+        <div class="hotspot-tag" title="${escapeHtml(r.tag)}">${escapeHtml(r.tag)}</div>
+        ${r.counts.map((c, i) => `
+          <div class="hotspot-cell" data-heat="${intensity(c)}" title="${escapeHtml(r.tag)} · ${quarters[i]}: ${c} decision${c !== 1 ? 's' : ''}">${c || ''}</div>
+        `).join('')}
+      </div>
+    `).join('');
+    container.innerHTML = header + body;
+  },
+
+  _renderOwnership(ownership) {
+    const statsEl = document.getElementById('ownership-stats');
+    if (statsEl) {
+      if (!ownership || ownership.totalCount === 0) {
+        statsEl.innerHTML = '<div class="analytics-empty">No deciders</div>';
+      } else {
+        const soloPct = ownership.totalCount > 0
+          ? Math.round((ownership.soloAuthoredCount / ownership.totalCount) * 100)
+          : 0;
+        const busTags = ownership.busFactorOneTags.length > 0
+          ? ownership.busFactorOneTags.map(t => `<span class="bus-tag">${escapeHtml(t)}</span>`).join('')
+          : '<span class="decider-stat-muted">none</span>';
+        statsEl.innerHTML = `
+          <div class="decider-stat-row">
+            <span class="decider-stat-label">Solo-authored</span>
+            <span class="decider-stat-value">${ownership.soloAuthoredCount} / ${ownership.totalCount} <span class="decider-stat-muted">(${soloPct}%)</span></span>
+          </div>
+          <div class="decider-stat-row">
+            <span class="decider-stat-label">Bus-factor = 1 tags</span>
+            <span class="decider-stat-value decider-stat-tags">${busTags}</span>
+          </div>
+        `;
+      }
+    }
+
+    this._destroyChart('ownership');
+    const canvas = document.getElementById('ownership-chart');
+    if (!canvas) return;
+    const top = (ownership?.deciders || []).slice(0, 10);
+    if (top.length === 0) {
+      canvas.replaceWith(emptyEl('ownership-chart'));
+      return;
+    }
+    const { grid, text } = this._chartDefaults();
+    this._charts.ownership = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: top.map(d => d.name),
+        datasets: [{
+          label: 'Decisions',
+          data: top.map(d => d.total),
+          backgroundColor: '#3b82f6',
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterLabel: (ctx) => {
+                const d = top[ctx.dataIndex];
+                const tags = d.tags.slice(0, 5).join(', ');
+                const more = d.tags.length > 5 ? ` +${d.tags.length - 5} more` : '';
+                return `Tags: ${tags}${more}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: text, precision: 0 }, grid: { color: grid } },
+          y: { ticks: { color: text }, grid: { color: grid } },
+        },
+      },
+    });
+  },
+
+  _renderConfidence(conf) {
+    this._destroyChart('confidence');
+    const canvas = document.getElementById('confidence-chart');
+    if (!canvas) return;
+    const lowList = document.getElementById('confidence-low-accepted');
+
+    if (!conf || (conf.high + conf.medium + conf.low + conf.none) === 0) {
+      canvas.replaceWith(emptyEl('confidence-chart'));
+      if (lowList) lowList.innerHTML = '';
+      return;
+    }
+
+    const { text } = this._chartDefaults();
+    this._charts.confidence = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['High', 'Medium', 'Low', 'Not set'],
+        datasets: [{
+          data: [conf.high, conf.medium, conf.low, conf.none],
+          backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#6b7280'],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'right', labels: { color: text } } },
+      },
+    });
+
+    if (lowList) {
+      if (conf.lowAcceptedIds.length === 0) {
+        lowList.innerHTML = '<div class="confidence-low-empty">No low-confidence accepted decisions ✓</div>';
+      } else {
+        lowList.innerHTML = `
+          <div class="confidence-low-title">Low-confidence &amp; accepted (${conf.lowAcceptedIds.length})</div>
+          <div class="confidence-low-chips">
+            ${conf.lowAcceptedIds.map(id => `<button class="confidence-chip" data-adr-id="${id}">${escapeHtml(id)}</button>`).join('')}
+          </div>
+        `;
+        lowList.querySelectorAll('.confidence-chip').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-adr-id');
+            if (id) {
+              this._visible = false;
+              this._updateVisibility();
+              const adr = allAdrs.find(a => a.id === id);
+              if (adr) Preview.open(adr);
+            }
+          });
+        });
+      }
+    }
+  },
+
 };
+
+function emptyEl(canvasId) {
+  const div = document.createElement('div');
+  div.className = 'analytics-empty';
+  div.textContent = 'No data';
+  // Keep the same id so re-renders can grab a canvas again — put a canvas back inside
+  const inner = document.createElement('canvas');
+  inner.id = canvasId;
+  inner.style.display = 'none';
+  div.appendChild(inner);
+  return div;
+}
+
+function hexA(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // ===== Health Dashboard Module =====
 const HealthDashboard = {
@@ -1829,6 +2220,7 @@ window.addEventListener('message', (event) => {
     allAdrs = msg.adrs || [];
     allEdges = msg.edges || [];
     healthReport = msg.health || null;
+    allSupersessionChains = (msg.lifecycle && msg.lifecycle.supersessionChains) || [];
     HealthDashboard.render(healthReport);
     Analytics.update(msg.lifecycle || null);
     Distill.updateAdrs();
