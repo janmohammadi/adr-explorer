@@ -11,7 +11,7 @@ export interface HealthIssue {
 }
 
 export interface HealthReport {
-  score: number; // 0-100
+  score: number;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   issues: HealthIssue[];
   stats: {
@@ -48,43 +48,36 @@ export function analyzeHealth(adrs: AdrRecord[], edges: AdrEdge[]): HealthReport
     missingDeciders: 0,
   };
 
-  // Count statuses
   for (const adr of adrs) {
     if (adr.status in stats) {
       (stats as Record<string, number>)[adr.status]++;
     }
   }
 
-  // Build adjacency set for orphan detection
   const connected = new Set<string>();
   for (const edge of edges) {
     connected.add(edge.source);
     connected.add(edge.target);
   }
 
-  // Check each ADR
   const staleAdrs: string[] = [];
   const orphanAdrs: string[] = [];
   const missingDeciderAdrs: string[] = [];
   const longProposedAdrs: string[] = [];
 
   for (const adr of adrs) {
-    // Stale check: accepted ADRs older than STALE_MONTHS
     if (adr.status === 'accepted' && monthsSince(adr.date) > STALE_MONTHS) {
       staleAdrs.push(adr.id);
     }
 
-    // Orphan check: no edges and more than 1 ADR total
     if (adrs.length > 1 && !connected.has(adr.id) && adr.relatesTo.length === 0 && adr.supersedes.length === 0 && adr.amends.length === 0) {
       orphanAdrs.push(adr.id);
     }
 
-    // Missing deciders
     if (!adr.deciders || adr.deciders.length === 0) {
       missingDeciderAdrs.push(adr.id);
     }
 
-    // Long-standing proposals (> 3 months)
     if (adr.status === 'proposed' && monthsSince(adr.date) > 3) {
       longProposedAdrs.push(adr.id);
     }
@@ -94,13 +87,9 @@ export function analyzeHealth(adrs: AdrRecord[], edges: AdrEdge[]): HealthReport
   stats.orphans = orphanAdrs.length;
   stats.missingDeciders = missingDeciderAdrs.length;
 
-  // Detect supersession chains (length >= 3)
   const supersessionChains = detectSupersessionChains(adrs, edges);
-
-  // Detect zombie decisions (deprecated with no superseding replacement)
   const zombieAdrs = detectZombies(adrs, edges);
 
-  // Build issues
   if (staleAdrs.length > 0) {
     issues.push({
       id: 'stale',
@@ -161,7 +150,6 @@ export function analyzeHealth(adrs: AdrRecord[], edges: AdrEdge[]): HealthReport
     });
   }
 
-  // Calculate score
   const score = calculateScore(adrs, issues);
   const grade = scoreToGrade(score);
 

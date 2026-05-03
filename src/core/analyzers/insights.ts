@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
-import { AdrRecord, AdrEdge, InsightMsg } from './types';
+import { AdrRecord, AdrEdge, InsightMsg } from '../types';
+import { LMProvider } from '../lmProvider';
 
 const SYSTEM_PROMPT = `You are a senior architecture reviewer. You receive a JSON graph of Architecture Decision Records (nodes + edges) and surface only problems that would actually bite a team.
 
@@ -27,7 +27,6 @@ What qualifies:
 Return ONLY the JSON array. No markdown, no prose, no fences.`;
 
 function buildAdrGraph(adrs: AdrRecord[], edges: AdrEdge[]): string {
-  // Build adjacency maps so we can embed relationships inline per node
   const outgoing = new Map<string, { type: string; target: string; reason?: string }[]>();
   const incoming = new Map<string, { type: string; source: string; reason?: string }[]>();
 
@@ -58,11 +57,10 @@ function buildAdrGraph(adrs: AdrRecord[], edges: AdrEdge[]): string {
 }
 
 /** Validate LLM insights against actual edge data to filter out hallucinations. */
-function validateInsights(insights: InsightMsg[], edges: AdrEdge[]): InsightMsg[] {
+export function validateInsights(insights: InsightMsg[], edges: AdrEdge[]): InsightMsg[] {
   const edgeSet = new Set<string>();
   for (const e of edges) {
     edgeSet.add(`${e.source}->${e.target}:${e.type}`);
-    // For relates-to, also consider the reverse direction as "connected"
     if (e.type === 'relates-to') {
       edgeSet.add(`${e.target}->${e.source}:${e.type}`);
     }
@@ -71,7 +69,6 @@ function validateInsights(insights: InsightMsg[], edges: AdrEdge[]): InsightMsg[
   return insights.filter(insight => {
     if (insight.type !== 'missing-relation') return true;
 
-    // For missing-relation claims, check if ANY edge exists between the cited ADRs
     const ids = insight.adrIds;
     if (ids.length < 2) return true;
 
@@ -82,7 +79,6 @@ function validateInsights(insights: InsightMsg[], edges: AdrEdge[]): InsightMsg[
         const hasAmends = edgeSet.has(`${ids[i]}->${ids[j]}:amends`);
         const hasRelates = edgeSet.has(`${ids[i]}->${ids[j]}:relates-to`);
         if (hasSupersedes || hasAmends || hasRelates) {
-          // Edge already exists — this is a hallucination, drop it
           return false;
         }
       }
@@ -94,45 +90,16 @@ function validateInsights(insights: InsightMsg[], edges: AdrEdge[]): InsightMsg[
 export async function analyzeInsights(
   adrs: AdrRecord[],
   edges: AdrEdge[],
-  token: vscode.CancellationToken
-): Promise<InsightMsg[]> {
-  // Prefer Claude Opus, then Sonnet, then any available model
-  const preferred = ['claude-opus-4', 'claude-sonnet-4', 'claude-3.5-sonnet'];
-  for (const family of preferred) {
-    const models = await vscode.lm.selectChatModels({ family });
-    if (models.length > 0) {
-      return runAnalysis(models[0], adrs, edges, token);
-    }
-  }
-
-  const allModels = await vscode.lm.selectChatModels();
-  if (allModels.length === 0) {
-    throw new Error('No language model available. Please ensure GitHub Copilot is installed and signed in.');
-  }
-  return runAnalysis(allModels[0], adrs, edges, token);
-}
-
-async function runAnalysis(
-  model: vscode.LanguageModelChat,
-  adrs: AdrRecord[],
-  edges: AdrEdge[],
-  token: vscode.CancellationToken
+  lm: LMProvider,
+  signal: AbortSignal
 ): Promise<InsightMsg[]> {
   const userContent = buildAdrGraph(adrs, edges);
 
-  const messages = [
-    vscode.LanguageModelChatMessage.User(SYSTEM_PROMPT),
-    vscode.LanguageModelChatMessage.User(userContent),
-  ];
-
-  const response = await model.sendRequest(messages, {}, token);
-
   let fullText = '';
-  for await (const chunk of response.text) {
+  for await (const chunk of lm.sendRequest(SYSTEM_PROMPT, userContent, signal)) {
     fullText += chunk;
   }
 
-  // Parse the JSON response
   const parsed = JSON.parse(fullText.trim());
   if (!Array.isArray(parsed)) {
     return [];
@@ -148,6 +115,5 @@ async function runAnalysis(
     adrIds: Array.isArray(item.adrIds) ? item.adrIds : [],
   }));
 
-  // Filter out hallucinated missing-relation claims
   return validateInsights(raw, edges);
 }

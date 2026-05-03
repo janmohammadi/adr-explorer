@@ -18,7 +18,6 @@ export class DistillCodeActionProvider implements vscode.CodeActionProvider {
       if (!diag.range.intersection(range)) continue;
       if (diag.source !== DISTILL_SOURCE) continue;
 
-      // The replacement is stored in diag.code as a JSON string
       const meta = typeof diag.code === 'string' ? JSON.parse(diag.code) : null;
       if (!meta) continue;
 

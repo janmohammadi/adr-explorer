@@ -1,16 +1,31 @@
 import * as vscode from 'vscode';
-import { AdrRepository } from './adrRepository';
-import { ExplorerViewProvider } from './explorerViewProvider';
+import { AdrRepository } from '../../core/repository';
+import { MessageRouter } from '../../core/messageRouter';
+import { VsCodeFileSystem } from './fileSystem';
+import { VsCodeLmProvider } from './lmProvider';
+import { VsCodeWebviewHost } from './webviewHost';
 import { DistillCodeActionProvider } from './distillCodeActions';
 
 export async function activate(context: vscode.ExtensionContext) {
-  const repository = new AdrRepository();
+  const fs = new VsCodeFileSystem();
+  const rootDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  const repository = new AdrRepository(fs, rootDir);
   await repository.initialize();
 
   const diagnostics = vscode.languages.createDiagnosticCollection('adr-distill');
   const codeActionProvider = new DistillCodeActionProvider(diagnostics);
 
-  const explorerView = new ExplorerViewProvider(context.extensionUri, repository, diagnostics);
+  const host = new VsCodeWebviewHost(context.extensionUri, diagnostics);
+  const lm = new VsCodeLmProvider();
+
+  const router = new MessageRouter(
+    repository,
+    host,
+    fs,
+    { aiEnabled: true, canEditFiles: true },
+    lm,
+  );
+  const routerAttachment = router.attach();
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.text = '$(layout) ADR Explorer';
@@ -21,11 +36,17 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     statusBarItem,
     vscode.commands.registerCommand('adrExplorer.open', () => {
-      explorerView.showPanel();
+      const opening = !host.isOpen;
+      host.showPanel();
+      if (opening) {
+        // Send the first snapshot so the panel renders even if the webview's
+        // 'ready' message races with this command.
+        router.sendData();
+      }
     }),
     vscode.commands.registerCommand('adrExplorer.refresh', async () => {
       await repository.initialize();
-      explorerView.sendData();
+      router.sendData();
     }),
     vscode.commands.registerCommand('adrExplorer.applyDistillFix', async (uri: vscode.Uri, suggestion: { target: string; replacement: string }) => {
       const doc = await vscode.workspace.openTextDocument(uri);
@@ -48,9 +69,9 @@ export async function activate(context: vscode.ExtensionContext) {
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
     ),
     diagnostics,
-    repository,
+    { dispose: () => routerAttachment.dispose() },
+    { dispose: () => repository.dispose() },
   );
-
 }
 
 export function deactivate() {}

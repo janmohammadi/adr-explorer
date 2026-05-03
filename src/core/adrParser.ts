@@ -59,7 +59,6 @@ export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | 
     const rawConfidence = String(data.confidence || '').toLowerCase().trim();
     const confidence = VALID_CONFIDENCE.includes(rawConfidence as ConfidenceLevel) ? rawConfidence as ConfidenceLevel : undefined;
 
-    // Compute review status
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
     const soonStr = new Date(now.getTime() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);

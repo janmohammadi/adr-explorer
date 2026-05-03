@@ -1,16 +1,51 @@
 {
   "name": "adr-explorer",
   "displayName": "ADR Explorer",
-  "description": "Visualize Architecture Decision Records with timeline and graph views",
-  "version": "0.1.1",
+  "description": "Visualize Architecture Decision Records with timeline and graph views — VS Code extension or standalone web app via npx.",
+  "version": "0.2.0",
   "publisher": "adr-explorer",
+  "author": {
+    "name": "Reza Janmohammadi",
+    "email": "janmohammadi.reza@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/janmohammadi/adr-explorer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janmohammadi/adr-explorer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/janmohammadi/adr-explorer/issues"
+  },
+  "keywords": [
+    "adr",
+    "architecture-decision-records",
+    "architecture",
+    "documentation",
+    "visualization",
+    "graph",
+    "timeline",
+    "cli",
+    "vscode-extension"
+  ],
   "engines": {
-    "vscode": "^1.93.0"
+    "vscode": "^1.93.0",
+    "node": ">=20"
   },
   "categories": [
     "Visualization"
   ],
   "main": "./dist/extension.js",
+  "bin": {
+    "adr-explorer": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "media/explorer/explorer.css",
+    "media/reset.css",
+    "README.md",
+    "LICENSE"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -31,27 +66,37 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "npm run clean && npm run build",
+    "prepublishOnly": "npm run clean && npm run build",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "node esbuild.js --production",
     "watch": "node esbuild.js --watch",
     "lint": "tsc --noEmit",
-    "package": "vsce package"
+    "package": "vsce package",
+    "start": "node dist/cli.js"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^20.19.37",
     "@types/vscode": "^1.93.0",
+    "@types/ws": "^8.5.13",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "chart.js": "^4.5.1",
+    "chokidar": "^4.0.1",
     "d3-drag": "^3.0.0",
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
+    "express": "^5.0.0",
+    "fast-glob": "^3.3.2",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.0",
-    "mermaid": "^11.4.0"
+    "mermaid": "^11.4.0",
+    "ws": "^8.18.0"
   }
 }

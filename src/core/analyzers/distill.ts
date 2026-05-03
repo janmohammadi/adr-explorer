@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
-import { AdrRecord, DistillSuggestion, DistillReport } from './types';
+import { AdrRecord, DistillSuggestion, DistillReport } from '../types';
+import { LMProvider } from '../lmProvider';
 
 const SYSTEM_PROMPT = `You are a senior architecture reviewer specializing in keeping ADRs concise and maintainable. You receive a single Architecture Decision Record and identify content that should be distilled to maximize signal-to-noise.
 
@@ -44,58 +44,43 @@ function validateSuggestions(suggestions: DistillSuggestion[], content: string):
   });
 }
 
-async function selectModel(): Promise<vscode.LanguageModelChat> {
-  const preferred = ['claude-opus-4', 'claude-sonnet-4', 'claude-3.5-sonnet'];
-  for (const family of preferred) {
-    const models = await vscode.lm.selectChatModels({ family });
-    if (models.length > 0) return models[0];
-  }
-  const allModels = await vscode.lm.selectChatModels();
-  if (allModels.length === 0) {
-    throw new Error('No language model available. Please ensure GitHub Copilot is installed and signed in.');
-  }
-  return allModels[0];
-}
-
 export async function analyzeDistill(
   adr: AdrRecord,
-  token: vscode.CancellationToken
+  lm: LMProvider,
+  signal: AbortSignal
 ): Promise<DistillSuggestion[]> {
-  const model = await selectModel();
-  return runAnalysis(model, adr, token);
+  return runAnalysis(lm, adr, signal);
 }
 
 export async function analyzeDistillAll(
   adrs: AdrRecord[],
-  token: vscode.CancellationToken,
+  lm: LMProvider,
+  signal: AbortSignal,
   onProgress?: (completed: number, total: number) => void,
   onResult?: (report: DistillReport) => void
 ): Promise<DistillReport[]> {
-  const model = await selectModel();
   const reports: DistillReport[] = [];
   const CONCURRENCY = 3;
   let completed = 0;
 
   async function processAdr(adr: AdrRecord) {
-    if (token.isCancellationRequested) return;
+    if (signal.aborted) return;
     try {
-      const suggestions = await runAnalysis(model, adr, token);
+      const suggestions = await runAnalysis(lm, adr, signal);
       const report: DistillReport = { adrId: adr.id, adrTitle: adr.title, suggestions };
       reports.push(report);
       onResult?.(report);
     } catch {
-      // Skip ADRs that fail analysis
       onResult?.({ adrId: adr.id, adrTitle: adr.title, suggestions: [] });
     }
     completed++;
     onProgress?.(completed, adrs.length);
   }
 
-  // Run with concurrency limit
   const queue = [...adrs];
   const active: Promise<void>[] = [];
   while (queue.length > 0 || active.length > 0) {
-    while (active.length < CONCURRENCY && queue.length > 0 && !token.isCancellationRequested) {
+    while (active.length < CONCURRENCY && queue.length > 0 && !signal.aborted) {
       const adr = queue.shift()!;
       const p = processAdr(adr).then(() => { active.splice(active.indexOf(p), 1); });
       active.push(p);
@@ -113,21 +98,14 @@ export function applySuggestion(content: string, suggestion: DistillSuggestion):
 }
 
 async function runAnalysis(
-  model: vscode.LanguageModelChat,
+  lm: LMProvider,
   adr: AdrRecord,
-  token: vscode.CancellationToken
+  signal: AbortSignal
 ): Promise<DistillSuggestion[]> {
   const userContent = buildUserContent(adr);
 
-  const messages = [
-    vscode.LanguageModelChatMessage.User(SYSTEM_PROMPT),
-    vscode.LanguageModelChatMessage.User(userContent),
-  ];
-
-  const response = await model.sendRequest(messages, {}, token);
-
   let fullText = '';
-  for await (const chunk of response.text) {
+  for await (const chunk of lm.sendRequest(SYSTEM_PROMPT, userContent, signal)) {
     fullText += chunk;
   }
 

@@ -1,358 +1,35 @@
-import * as vscode from 'vscode';
-import { AdrRepository } from './adrRepository';
-import { analyzeHealth } from './healthAnalyzer';
-import { analyzeInsights } from './insightAnalyzer';
-import { analyzeDistill, analyzeDistillAll, applySuggestion } from './distillAnalyzer';
-import { DistillSuggestion } from './types';
-import { computeLifecycleMetrics } from './lifecycleAnalyzer';
-import { getNonce } from './utils';
-
-export class ExplorerViewProvider {
-  private panel: vscode.WebviewPanel | undefined;
-  private panelDisposables: vscode.Disposable[] = [];
-
-  constructor(
-    private extensionUri: vscode.Uri,
-    private repository: AdrRepository,
-    private diagnostics: vscode.DiagnosticCollection
-  ) {}
-
-  /** Opens or reveals the full explorer in an editor tab. */
-  showPanel(): void {
-    if (this.panel) {
-      this.panel.reveal();
-      return;
-    }
-
-    this.panel = vscode.window.createWebviewPanel(
-      'adrExplorer.explorerView',
-      'ADR Explorer',
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.extensionUri, 'dist'),
-          vscode.Uri.joinPath(this.extensionUri, 'media'),
-        ],
-      }
-    );
-
-    this.panel.webview.html = this.getPanelHtml(this.panel.webview);
-    this.panel.iconPath = new vscode.ThemeIcon('layout');
-
-    this.panel.webview.onDidReceiveMessage(
-      msg => this.handleMessage(msg),
-      undefined,
-      this.panelDisposables
-    );
-
-    const changeListener = this.repository.onDidChange(() => this.sendData());
-    this.panelDisposables.push(changeListener);
-
-    this.panel.onDidDispose(() => {
-      this.panel = undefined;
-      this.panelDisposables.forEach(d => d.dispose());
-      this.panelDisposables = [];
-    });
-  }
-
-  private handleMessage(msg: { type: string; filePath?: string; content?: string; adrId?: string; suggestionId?: string }): void {
-    switch (msg.type) {
-      case 'openFile':
-        if (msg.filePath) {
-          vscode.workspace.openTextDocument(msg.filePath).then(doc =>
-            vscode.window.showTextDocument(doc)
-          );
-        }
-        break;
-      case 'analyzeInsights':
-        this.runInsightAnalysis();
-        break;
-      case 'analyzeDistill':
-        if (msg.adrId) {
-          this.runDistillAnalysis(msg.adrId);
-        }
-        break;
-      case 'analyzeDistillAll':
-        this.runDistillAll();
-        break;
-      case 'applyDistill':
-        if (msg.adrId && msg.suggestionId) {
-          this.applyDistillSuggestion(msg.adrId, msg.suggestionId);
-        }
-        break;
-      case 'applyDistillAll':
-        if (msg.adrId) {
-          this.applyAllDistillSuggestions(msg.adrId);
-        }
-        break;
-      case 'openDistillAdr':
-        if (msg.adrId) {
-          this.openDistillAdr(msg.adrId);
-        }
-        break;
-      case 'requestData':
-      case 'ready':
-        this.sendData();
-        break;
-    }
-  }
-
-  sendData(): void {
-    const adrs = this.repository.getAllAdrs();
-    const edges = this.repository.getAllEdges();
-    const health = analyzeHealth(adrs, edges);
-    const lifecycle = computeLifecycleMetrics(adrs, edges);
-    this.panel?.webview.postMessage({
-      type: 'update',
-      adrs,
-      edges,
-      health,
-      lifecycle,
-    });
-  }
-
-  /** Distill cache: suggestions keyed by adrId for apply operations */
-  private distillCache = new Map<string, DistillSuggestion[]>();
-
-  private async openDistillAdr(adrId: string): Promise<void> {
-    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
-    if (!adr) return;
-
-    // Open the file in the editor (beside the webview panel)
-    const doc = await vscode.workspace.openTextDocument(adr.filePath);
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, false);
-
-    // Set diagnostics if we have cached suggestions
-    const suggestions = this.distillCache.get(adrId);
-    if (suggestions && suggestions.length > 0) {
-      this.setDistillDiagnostics(doc, suggestions);
-    }
-
-    // Auto-trigger analysis if not cached
-    if (!suggestions) {
-      this.runDistillAnalysis(adrId);
-    }
-  }
-
-  private setDistillDiagnostics(doc: vscode.TextDocument, suggestions: DistillSuggestion[]): void {
-    const text = doc.getText();
-    const diags: vscode.Diagnostic[] = [];
-
-    for (const s of suggestions) {
-      const idx = text.indexOf(s.target);
-      if (idx === -1) continue;
-
-      const startPos = doc.positionAt(idx);
-      const endPos = doc.positionAt(idx + s.target.length);
-      const range = new vscode.Range(startPos, endPos);
-
-      const diag = new vscode.Diagnostic(
-        range,
-        `[${s.category}] ${s.reason}`,
-        vscode.DiagnosticSeverity.Warning
-      );
-      diag.source = 'adr-distill';
-      // Store target + replacement so the code action can use them
-      diag.code = JSON.stringify({ target: s.target, replacement: s.replacement });
-      diags.push(diag);
-    }
-
-    this.diagnostics.set(doc.uri, diags);
-  }
-
-  private async runDistillAnalysis(adrId: string): Promise<void> {
-    this.panel?.webview.postMessage({ type: 'distillLoading', adrId, loading: true });
-    try {
-      const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
-      if (!adr) return;
-      const tokenSource = new vscode.CancellationTokenSource();
-      const suggestions = await analyzeDistill(adr, tokenSource.token);
-      this.distillCache.set(adrId, suggestions);
-      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions });
-
-      // Set diagnostics on the file if it's open
-      for (const doc of vscode.workspace.textDocuments) {
-        if (doc.uri.fsPath === adr.filePath) {
-          this.setDistillDiagnostics(doc, suggestions);
-          break;
-        }
-      }
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`ADR distill analysis failed: ${err.message}`);
-      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: [] });
-    } finally {
-      this.panel?.webview.postMessage({ type: 'distillLoading', adrId, loading: false });
-    }
-  }
-
-  private async runDistillAll(): Promise<void> {
-    this.panel?.webview.postMessage({ type: 'distillAllLoading', loading: true });
-    try {
-      const adrs = this.repository.getAllAdrs();
-      const adrsMap = new Map(adrs.map(a => [a.id, a]));
-      const tokenSource = new vscode.CancellationTokenSource();
-
-      // Mark all ADRs as loading
-      for (const adr of adrs) {
-        this.panel?.webview.postMessage({ type: 'distillLoading', adrId: adr.id, loading: true });
-      }
-
-      const reports = await analyzeDistillAll(
-        adrs,
-        tokenSource.token,
-        (completed, total) => {
-          this.panel?.webview.postMessage({ type: 'distillAllProgress', completed, total });
-        },
-        async (report) => {
-          // Stream each result to the UI as it completes
-          this.distillCache.set(report.adrId, report.suggestions);
-          this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId: report.adrId, suggestions: report.suggestions });
-          this.panel?.webview.postMessage({ type: 'distillLoading', adrId: report.adrId, loading: false });
-          const adr = adrsMap.get(report.adrId);
-          if (adr) {
-            try {
-              const doc = await vscode.workspace.openTextDocument(adr.filePath);
-              this.setDistillDiagnostics(doc, report.suggestions);
-            } catch { /* file may not be accessible */ }
-          }
-        }
-      );
-
-      this.panel?.webview.postMessage({ type: 'distillAll', reports });
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`ADR distill analysis failed: ${err.message}`);
-      this.panel?.webview.postMessage({ type: 'distillAll', reports: [] });
-    } finally {
-      this.panel?.webview.postMessage({ type: 'distillAllLoading', loading: false });
-    }
-  }
-
-  private async applyDistillSuggestion(adrId: string, suggestionId: string): Promise<void> {
-    const suggestions = this.distillCache.get(adrId);
-    const suggestion = suggestions?.find(s => s.id === suggestionId);
-    if (!suggestion) return;
-
-    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
-    if (!adr) return;
-
-    try {
-      const doc = await vscode.workspace.openTextDocument(adr.filePath);
-      const fullText = doc.getText();
-      const idx = fullText.indexOf(suggestion.target);
-      if (idx === -1) {
-        vscode.window.showWarningMessage('Could not find the target text — it may have already been changed.');
-        return;
-      }
-      const startPos = doc.positionAt(idx);
-      const endPos = doc.positionAt(idx + suggestion.target.length);
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(doc.uri, new vscode.Range(startPos, endPos), suggestion.replacement);
-      await vscode.workspace.applyEdit(edit);
-      await doc.save();
-
-      // Remove applied suggestion from cache and update diagnostics
-      const remaining = suggestions!.filter(s => s.id !== suggestionId);
-      this.distillCache.set(adrId, remaining);
-      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: remaining });
-
-      // Refresh diagnostics on the updated doc
-      const updatedDoc = await vscode.workspace.openTextDocument(adr.filePath);
-      this.setDistillDiagnostics(updatedDoc, remaining);
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to apply suggestion: ${err.message}`);
-    }
-  }
-
-  private async applyAllDistillSuggestions(adrId: string): Promise<void> {
-    const suggestions = this.distillCache.get(adrId);
-    if (!suggestions || suggestions.length === 0) return;
-
-    const adr = this.repository.getAllAdrs().find(a => a.id === adrId);
-    if (!adr) return;
-
-    try {
-      const doc = await vscode.workspace.openTextDocument(adr.filePath);
-      let content = doc.getText();
-
-      const located = suggestions
-        .map(s => ({ suggestion: s, idx: content.indexOf(s.target) }))
-        .filter(s => s.idx !== -1)
-        .sort((a, b) => b.idx - a.idx);
-
-      for (const { suggestion } of located) {
-        content = applySuggestion(content, suggestion);
-      }
-
-      const fullRange = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(doc.uri, fullRange, content);
-      await vscode.workspace.applyEdit(edit);
-      await doc.save();
-
-      this.distillCache.set(adrId, []);
-      this.panel?.webview.postMessage({ type: 'distillSuggestions', adrId, suggestions: [] });
-      this.diagnostics.delete(doc.uri);
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to apply suggestions: ${err.message}`);
-    }
-  }
-
-  private async runInsightAnalysis(): Promise<void> {
-    this.panel?.webview.postMessage({ type: 'insightsLoading', loading: true });
-    try {
-      const adrs = this.repository.getAllAdrs();
-      const edges = this.repository.getAllEdges();
-      const tokenSource = new vscode.CancellationTokenSource();
-      const insights = await analyzeInsights(adrs, edges, tokenSource.token);
-      this.panel?.webview.postMessage({ type: 'insights', insights });
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`ADR Insight analysis failed: ${err.message}`);
-      this.panel?.webview.postMessage({ type: 'insights', insights: [] });
-    } finally {
-      this.panel?.webview.postMessage({ type: 'insightsLoading', loading: false });
-    }
-  }
-
-  private getPanelHtml(webview: vscode.Webview): string {
-    const nonce = getNonce();
-    const explorerJsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'explorer.js')
-    );
-    const explorerCssUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'media', 'explorer', 'explorer.css')
-    );
-    const resetCssUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'media', 'reset.css')
-    );
-
-    return `<!DOCTYPE html>
+/**
+ * Host-neutral builder for the explorer page HTML. Both the VS Code webview
+ * host and the CLI HTTP server inject host-specific bits (CSP source, asset
+ * URIs, nonce) and reuse the body markup from here.
+ */
+export function buildExplorerHtml(parts: {
+  cspMeta: string;
+  cssLinks: string;
+  headExtras: string;
+  scriptTags: string;
+}): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  ${parts.cspMeta}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="${resetCssUri}" rel="stylesheet">
-  <link href="${explorerCssUri}" rel="stylesheet">
+  ${parts.cssLinks}
+  ${parts.headExtras}
   <title>ADR Explorer</title>
 </head>
 <body>
   <div class="app">
-    <!-- Header / Tab Bar -->
     <div class="header">
       <div class="header-left">
-        <!-- Search -->
         <div class="header-search">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
           </svg>
           <input id="search-input" type="text" placeholder="Search ADRs..." />
         </div>
-
       </div>
-
       <div class="header-right">
         <button id="distill-toggle" class="header-btn" title="Toggle Distill">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -369,8 +46,6 @@ export class ExplorerViewProvider {
         <span id="record-count" class="header-count"></span>
       </div>
     </div>
-
-    <!-- Health Dashboard -->
     <div id="health-dashboard" class="health-dashboard collapsed">
       <div class="health-header" id="health-header-toggle">
         <div class="health-header-left">
@@ -390,10 +65,7 @@ export class ExplorerViewProvider {
         <div class="health-issues" id="health-issues"></div>
       </div>
     </div>
-
-    <!-- Main Content -->
     <div class="main">
-      <!-- Left Panel: Timeline -->
       <div class="timeline-panel">
         <div class="timeline-header">
           <div class="timeline-label">
@@ -406,11 +78,7 @@ export class ExplorerViewProvider {
           <div id="timeline-entries" class="timeline-entries"></div>
         </div>
       </div>
-
-      <!-- Resize handle: timeline | graph -->
       <div id="resize-handle-timeline" class="resize-handle"></div>
-
-      <!-- Middle Panel: Graph -->
       <div class="graph-panel grid-background" id="graph-container">
         <div class="graph-label">
           <div class="label-icon"><div class="label-icon-dot"></div></div>
@@ -461,11 +129,7 @@ export class ExplorerViewProvider {
         </div>
         <div id="graph-group-legend" class="graph-group-legend"></div>
       </div>
-
-      <!-- Resize handle: graph | preview (hidden until preview opens) -->
       <div id="resize-handle-preview" class="resize-handle resize-handle-preview"></div>
-
-      <!-- Preview Panel (slides in from right) -->
       <div class="preview-panel" id="preview-panel">
         <div class="preview-header">
           <div class="preview-header-left">
@@ -496,7 +160,6 @@ export class ExplorerViewProvider {
       </div>
     </div>
   </div>
-  <!-- Analytics Overlay -->
   <div id="analytics-panel" class="analytics-panel" style="display:none">
     <div class="analytics-header">
       <span class="analytics-title">Decision Lifecycle Analytics</span>
@@ -513,7 +176,6 @@ export class ExplorerViewProvider {
       <button class="analytics-tab" data-tab="people" role="tab">People &amp; Trust</button>
     </div>
     <div class="analytics-body">
-      <!-- Overview tab -->
       <div class="analytics-tab-panel active" data-panel="overview">
         <div class="analytics-section">
           <div class="analytics-section-title">Status Over Time</div>
@@ -529,8 +191,6 @@ export class ExplorerViewProvider {
           <div id="funnel-chart" class="analytics-funnel"></div>
         </div>
       </div>
-
-      <!-- Debt tab -->
       <div class="analytics-tab-panel" data-panel="debt">
         <div class="analytics-section">
           <div class="analytics-section-title">Decision Debt</div>
@@ -542,8 +202,6 @@ export class ExplorerViewProvider {
           <div class="analytics-canvas-wrap"><canvas id="debt-by-tag-chart"></canvas></div>
         </div>
       </div>
-
-      <!-- Areas tab -->
       <div class="analytics-tab-panel" data-panel="areas">
         <div class="analytics-section">
           <div class="analytics-section-title">Architectural Hotspots</div>
@@ -555,8 +213,6 @@ export class ExplorerViewProvider {
           <div id="stability-chart" class="analytics-stability"></div>
         </div>
       </div>
-
-      <!-- People & Trust tab -->
       <div class="analytics-tab-panel" data-panel="people">
         <div class="analytics-section">
           <div class="analytics-section-title">Ownership</div>
@@ -573,7 +229,6 @@ export class ExplorerViewProvider {
       </div>
     </div>
   </div>
-  <!-- Distill Overlay -->
   <div id="distill-panel" class="distill-panel" style="display:none">
     <div class="distill-panel-header">
       <span class="distill-panel-title">Distill</span>
@@ -608,8 +263,7 @@ export class ExplorerViewProvider {
       </div>
     </div>
   </div>
-  <script nonce="${nonce}" src="${explorerJsUri}"></script>
+  ${parts.scriptTags}
 </body>
 </html>`;
-  }
 }

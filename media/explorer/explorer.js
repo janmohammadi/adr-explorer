@@ -6,8 +6,11 @@ const { Marked } = require('marked');
 const mermaid = require('mermaid');
 const Chart = require('chart.js/auto').default || require('chart.js/auto');
 
-// @ts-ignore
-const vscode = acquireVsCodeApi();
+// @ts-ignore — host is `acquireVsCodeApi()` inside VS Code, or a WebSocket-backed
+// shim injected by the CLI server (see media/explorer/host-shim.js).
+const host = (typeof acquireVsCodeApi === 'function')
+  ? acquireVsCodeApi()
+  : (window.__adrHost || { postMessage: () => {} });
 
 // ===== Constants =====
 const STATUS_COLORS = {
@@ -223,7 +226,7 @@ const Preview = {
     if (editBtn) {
       editBtn.onclick = () => {
         if (adr.filePath) {
-          vscode.postMessage({ type: 'openFile', filePath: adr.filePath });
+          host.postMessage({ type: 'openFile', filePath: adr.filePath });
         }
       };
     }
@@ -874,7 +877,7 @@ function initGraphToolbar() {
       graphInsightsListOpen = !wasOpen;
       renderGraphToolbarLists();
       if (graphInsightsListOpen && allInsights.length === 0 && !insightsLoading) {
-        vscode.postMessage({ type: 'analyzeInsights' });
+        host.postMessage({ type: 'analyzeInsights' });
       }
     });
   }
@@ -1089,7 +1092,7 @@ function renderInsightsList() {
     if (analyzeBtn) {
       analyzeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        vscode.postMessage({ type: 'analyzeInsights' });
+        host.postMessage({ type: 'analyzeInsights' });
       });
     }
     return;
@@ -1136,7 +1139,7 @@ function renderInsightsList() {
   if (reanalyzeBtn) {
     reanalyzeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      vscode.postMessage({ type: 'analyzeInsights' });
+      host.postMessage({ type: 'analyzeInsights' });
     });
   }
 
@@ -1942,11 +1945,11 @@ const Distill = {
       });
     }
     document.getElementById('distill-all-btn')?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'analyzeDistillAll' });
+      host.postMessage({ type: 'analyzeDistillAll' });
     });
     document.getElementById('distill-content-apply-all')?.addEventListener('click', () => {
       if (this._selectedAdrId) {
-        vscode.postMessage({ type: 'applyDistillAll', adrId: this._selectedAdrId });
+        host.postMessage({ type: 'applyDistillAll', adrId: this._selectedAdrId });
       }
     });
   },
@@ -2065,7 +2068,7 @@ const Distill = {
     const body = document.getElementById('distill-content-body');
     if (body) body.scrollTop = 0;
     if (!this._suggestions[adrId] && !this._loading[adrId]) {
-      vscode.postMessage({ type: 'analyzeDistill', adrId });
+      host.postMessage({ type: 'analyzeDistill', adrId });
     }
     this._renderContent(adrId);
   },
@@ -2187,7 +2190,7 @@ const Distill = {
     body.querySelectorAll('.distill-apply-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        vscode.postMessage({
+        host.postMessage({
           type: 'applyDistill',
           adrId: e.target.dataset.adrId,
           suggestionId: e.target.dataset.suggestionId,
@@ -2213,6 +2216,19 @@ const Distill = {
   },
 };
 
+// Hide UI affordances the host can't fulfill (AI buttons when no LM is wired,
+// Apply buttons when in --read-only mode). Capabilities arrive in every `update`.
+function applyHostCapabilities(caps) {
+  if (!caps) return;
+  const aiSelectors = ['#distill-toggle', '#graph-insights-toggle'];
+  for (const sel of aiSelectors) {
+    const el = document.querySelector(sel);
+    if (el) el.style.display = caps.aiEnabled ? '' : 'none';
+  }
+  document.body.classList.toggle('host-no-ai', !caps.aiEnabled);
+  document.body.classList.toggle('host-read-only', !caps.canEditFiles);
+}
+
 // ===== Message Handling =====
 window.addEventListener('message', (event) => {
   const msg = event.data;
@@ -2221,11 +2237,15 @@ window.addEventListener('message', (event) => {
     allEdges = msg.edges || [];
     healthReport = msg.health || null;
     allSupersessionChains = (msg.lifecycle && msg.lifecycle.supersessionChains) || [];
+    applyHostCapabilities(msg.capabilities);
     HealthDashboard.render(healthReport);
     Analytics.update(msg.lifecycle || null);
     Distill.updateAdrs();
     renderGraphToolbarLists();
     applyFilters();
+  } else if (msg.type === 'notify') {
+    // Lightweight surface for non-VSCode hosts. VS Code has its own modal toasts.
+    try { console[msg.level === 'error' ? 'error' : msg.level === 'warn' ? 'warn' : 'log']('[ADR]', msg.message); } catch {}
   } else if (msg.type === 'insights') {
     allInsights = msg.insights || [];
     renderGraphToolbarLists();
@@ -2293,5 +2313,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  vscode.postMessage({ type: 'ready' });
+  host.postMessage({ type: 'ready' });
 });
