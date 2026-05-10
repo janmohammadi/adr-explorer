@@ -7,6 +7,8 @@ Browse, analyze, and tidy your Architecture Decision Records in a graph + timeli
 
 Both targets ship from the same repo and share the same UI bundle.
 
+![ADR Explorer — graph view](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/graph.png)
+
 ---
 
 ## Features
@@ -18,6 +20,44 @@ Both targets ship from the same repo and share the same UI bundle.
 - **AI Insights** *(opt-in)* — Claude reviews the whole graph for contradictions, missing relations, and staleness.
 - **AI Distill** *(opt-in)* — Claude flags filler, redundant sections, and over-detailed alternatives in individual ADRs, with one-click apply.
 - **Live file watching** — edits on disk show up immediately.
+
+### Graph view
+
+Group decisions by tag, status, or decider to see clusters at a glance:
+
+![Graph grouping](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/groups.png)
+
+Trace supersession chains to understand how a decision evolved:
+
+![Supersession chains](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/chains.png)
+
+### Health dashboard
+
+Score the corpus (A–F) and surface stale, orphan, zombie, and incomplete decisions:
+
+![Health dashboard](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-health.png)
+
+### Lifecycle analytics
+
+Velocity, status-over-time, and decision debt:
+
+![Lifecycle overview](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-lifecycle-overview.png)
+
+Hotspots by area / tag:
+
+![Lifecycle by area](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-lifecycle-areas.png)
+
+Ownership and bus-factor by decider:
+
+![Lifecycle by people](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-lifecycle-people.png)
+
+### AI Distill
+
+Claude flags filler and over-detail per ADR, with one-click apply:
+
+![AI Distill — review](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/distill.png)
+
+![AI Distill — applied result](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/distill-result.png)
 
 ---
 
