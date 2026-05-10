@@ -19,7 +19,7 @@ Serilog + Seq (ADR-0011) did not cover distributed tracing and required per-serv
 ## Decision
 
 - Instrument all services with the OpenTelemetry SDK (traces + metrics + logs).
-- Run an OpenTelemetry Collector sidecar per AKS node pool; export to a central Collector gateway.
+- Run an OpenTelemetccccry Collector sidecar per AKS node pool; export to a central Collector gateway.
 - Route traces to Jaeger, metrics to Prometheus, logs to Loki.
 - Retire Seq over a 30-day overlap window.
 

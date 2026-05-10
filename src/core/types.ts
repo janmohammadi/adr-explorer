@@ -21,7 +21,10 @@ export interface AdrRecord {
   relatesTo: RelatesToEntry[];
   tags: string[];
   filePath: string;
+  /** Markdown body with YAML frontmatter stripped (for rendering). */
   content: string;
+  /** Full raw file contents including frontmatter (for editing). */
+  rawContent: string;
   /** Optional: next review date (YYYY-MM-DD) */
   reviewBy?: string;
   /** Optional: recurring review cycle e.g. "6months", "1year" */
@@ -128,6 +131,8 @@ export interface LifecycleMetrics {
 export interface HostCapabilities {
   aiEnabled: boolean;
   canEditFiles: boolean;
+  /** Host can open the underlying file in an external editor (e.g., VS Code). */
+  canOpenInEditor: boolean;
 }
 
 export type ExtensionToWebviewMessage =
@@ -151,4 +156,5 @@ export type WebviewToExtensionMessage =
   | { type: 'applyDistill'; adrId: string; suggestionId: string }
   | { type: 'applyDistillAll'; adrId: string }
   | { type: 'openDistillAdr'; adrId: string }
+  | { type: 'saveAdr'; filePath: string; content: string }
   | { type: 'ready' };

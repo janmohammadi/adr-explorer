@@ -21,6 +21,26 @@ Both targets ship from the same repo and share the same UI bundle.
 
 ---
 
+## Authoring ADRs with deep-adr
+
+ADR Explorer reads and audits an ADR corpus. It doesn't write the decisions for you. For that, use its companion: **[deep-adr](https://github.com/janmohammadi/deep-adr)** — a Claude skill bundle that co-thinks each decision with you, pushes back on weak reasoning, and refuses to ship a tutorial-shaped ADR.
+
+```text
+deep-adr (draft + critique)  →  *.md on disk  →  ADR Explorer (visualize + audit + distill)
+```
+
+The two cover opposite halves of the ADR lifecycle:
+
+| | deep-adr | ADR Explorer |
+|---|---|---|
+| When | While writing one decision | After many exist |
+| Mode | Co-author + critic | Visual audit + distill |
+| Surface | Claude skills | Browser / VS Code webview |
+
+Install the skills once and they'll be available next time you ask Claude to draft an ADR. See the [deep-adr README](https://github.com/janmohammadi/deep-adr#install) for setup.
+
+---
+
 ## Quick start (npx, no VS Code required)
 
 From the directory containing your ADRs:

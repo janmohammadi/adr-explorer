@@ -12,7 +12,12 @@
       "Bash(find /c/Repos/ideas-pocs/adr-vs-code/media -type f -name *.js -o -name *.css -o -name *.html)",
       "Bash(find /c/Repos/ideas-pocs/adr-vs-code -type d \\\\\\( -name adr -o -name decisions -o -name ADR -o -name adr-* \\\\\\))",
       "Bash(npx ts-node:*)",
-      "Bash(npx ctx7@latest library likec4 \"What skills or Claude Code integrations does LikeC4 provide? DSL for Context Container Deployment views\")"
+      "Bash(npx ctx7@latest library likec4 \"What skills or Claude Code integrations does LikeC4 provide? DSL for Context Container Deployment views\")",
+      "Bash(npx --version)",
+      "Bash(npx playwright *)",
+      "Bash(node scripts/e2e-editor.mjs)",
+      "Bash(node dist/cli.js --root test-fixtures --no-open --port 28992)",
+      "Bash(node -e ' *)"
     ]
   }
 }

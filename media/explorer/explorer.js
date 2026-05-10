@@ -6,6 +6,12 @@ const { Marked } = require('marked');
 const mermaid = require('mermaid');
 const Chart = require('chart.js/auto').default || require('chart.js/auto');
 
+const { EditorView, basicSetup } = require('codemirror');
+const { EditorState } = require('@codemirror/state');
+const { keymap } = require('@codemirror/view');
+const { indentWithTab } = require('@codemirror/commands');
+const { markdown } = require('@codemirror/lang-markdown');
+
 // @ts-ignore — host is `acquireVsCodeApi()` inside VS Code, or a WebSocket-backed
 // shim injected by the CLI server (see media/explorer/host-shim.js).
 const host = (typeof acquireVsCodeApi === 'function')
@@ -64,6 +70,7 @@ let allAdrs = [];
 let allEdges = [];
 let healthReport = null;
 let allInsights = [];
+let hostCaps = { aiEnabled: false, canEditFiles: false, canOpenInEditor: false };
 let insightsLoading = false;
 let searchQuery = '';
 let activeStatuses = new Set();
@@ -222,14 +229,30 @@ const Preview = {
       `;
     }
 
-    // Edit button
+    // Edit button → opens inline CodeMirror editor
     if (editBtn) {
       editBtn.onclick = () => {
-        if (adr.filePath) {
-          host.postMessage({ type: 'openFile', filePath: adr.filePath });
-        }
+        if (!hostCaps.canEditFiles) return;
+        Editor.open(adr);
       };
+      editBtn.style.display = hostCaps.canEditFiles ? '' : 'none';
     }
+
+    const openBtn = document.getElementById('preview-open-btn');
+    if (openBtn) {
+      openBtn.onclick = () => {
+        if (adr.filePath) host.postMessage({ type: 'openFile', filePath: adr.filePath });
+      };
+      openBtn.style.display = hostCaps.canOpenInEditor ? '' : 'none';
+    }
+
+    const saveBtn = document.getElementById('preview-save-btn');
+    if (saveBtn) saveBtn.onclick = () => Editor.save();
+    const cancelBtn = document.getElementById('preview-cancel-btn');
+    if (cancelBtn) cancelBtn.onclick = () => Editor.cancel();
+
+    // Always exit editor view when (re)showing a record
+    if (Editor.isEditing()) Editor._exit();
 
     // Render markdown content
     const content = adr.content || '';
@@ -273,6 +296,125 @@ const Preview = {
     const handle = document.getElementById('resize-handle-preview');
     if (handle) handle.classList.remove('visible');
   }
+};
+
+// ===== Inline Editor Module (CodeMirror 6) =====
+const Editor = {
+  _view: null,
+  _adr: null,
+  _initialDoc: '',
+  _dirty: false,
+
+  _ensureView() {
+    if (this._view) return this._view;
+    const container = document.getElementById('preview-editor');
+    if (!container) return null;
+    const saveKeymap = keymap.of([
+      { key: 'Mod-s', preventDefault: true, run: () => { Editor.save(); return true; } },
+      { key: 'Escape', run: () => { Editor.cancel(); return true; } },
+      indentWithTab,
+    ]);
+    const updateListener = EditorView.updateListener.of((upd) => {
+      if (!upd.docChanged) return;
+      const text = upd.state.doc.toString();
+      const wasDirty = Editor._dirty;
+      Editor._dirty = (text !== Editor._initialDoc);
+      if (wasDirty !== Editor._dirty) Editor._reflectDirty();
+    });
+    this._view = new EditorView({
+      parent: container,
+      state: EditorState.create({
+        doc: '',
+        extensions: [basicSetup, markdown(), saveKeymap, updateListener],
+      }),
+    });
+    return this._view;
+  },
+
+  open(adr) {
+    if (!adr || !adr.filePath) return;
+    const view = this._ensureView();
+    if (!view) return;
+    const body = document.getElementById('preview-body');
+    const editorEl = document.getElementById('preview-editor');
+    this._adr = adr;
+    // Editor edits the WHOLE file (frontmatter + body); fall back to body
+    // if rawContent is missing for any reason.
+    this._initialDoc = (adr.rawContent != null ? adr.rawContent : adr.content) || '';
+    this._dirty = false;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: this._initialDoc },
+    });
+    if (body) body.style.display = 'none';
+    if (editorEl) editorEl.style.display = 'flex';
+    this._toggleButtons(true);
+    this._reflectDirty();
+    setTimeout(() => view.focus(), 0);
+  },
+
+  cancel() {
+    console.log('[ADR Editor] cancel() invoked', { hasAdr: !!this._adr, dirty: this._dirty });
+    if (!this._adr) return;
+    this._exit();
+  },
+
+  save() {
+    console.log('[ADR Editor] save() invoked', {
+      hasAdr: !!this._adr,
+      hasView: !!this._view,
+      dirty: this._dirty,
+      filePath: this._adr && this._adr.filePath,
+    });
+    if (!this._adr || !this._view) return;
+    const content = this._view.state.doc.toString();
+    if (content === this._initialDoc) {
+      // No edits — just exit
+      this._exit();
+      return;
+    }
+    host.postMessage({ type: 'saveAdr', filePath: this._adr.filePath, content });
+    console.log('[ADR Editor] saveAdr posted, bytes=', content.length);
+    this._initialDoc = content;
+    this._dirty = false;
+    this._reflectDirty();
+    this._exit();
+  },
+
+  _exit() {
+    const body = document.getElementById('preview-body');
+    const editorEl = document.getElementById('preview-editor');
+    if (editorEl) editorEl.style.display = 'none';
+    if (body) body.style.display = '';
+    this._toggleButtons(false);
+    this._adr = null;
+    this._dirty = false;
+  },
+
+  _toggleButtons(editing) {
+    const editBtn = document.getElementById('preview-edit-btn');
+    const saveBtn = document.getElementById('preview-save-btn');
+    const cancelBtn = document.getElementById('preview-cancel-btn');
+    const openBtn = document.getElementById('preview-open-btn');
+    if (editBtn) editBtn.style.display = editing ? 'none' : '';
+    if (saveBtn) saveBtn.style.display = editing ? '' : 'none';
+    if (cancelBtn) cancelBtn.style.display = editing ? '' : 'none';
+    if (openBtn && editing) openBtn.style.display = 'none';
+    else if (openBtn && hostCaps.canOpenInEditor) openBtn.style.display = '';
+  },
+
+  _reflectDirty() {
+    const saveBtn = document.getElementById('preview-save-btn');
+    if (saveBtn) {
+      saveBtn.dataset.dirty = this._dirty ? 'true' : 'false';
+      // Always clickable — the save() handler short-circuits when there are
+      // no changes. This avoids the "click does nothing" trap if dirty
+      // tracking misses an edit.
+      saveBtn.disabled = false;
+    }
+  },
+
+  isEditing() { return !!this._adr; },
+  isDirty() { return this._dirty; },
 };
 
 // ===== Timeline Module =====
@@ -1331,6 +1473,10 @@ function applyFilters() {
   if (countEl) {
     countEl.textContent = `${adrs.length} of ${allAdrs.length} records`;
   }
+  const emptyEl = document.getElementById('empty-state');
+  if (emptyEl) {
+    emptyEl.style.display = allAdrs.length === 0 ? 'flex' : 'none';
+  }
   Timeline.render(adrs);
   Graph.render(adrs, edges);
 
@@ -2220,13 +2366,23 @@ const Distill = {
 // Apply buttons when in --read-only mode). Capabilities arrive in every `update`.
 function applyHostCapabilities(caps) {
   if (!caps) return;
+  hostCaps = {
+    aiEnabled: !!caps.aiEnabled,
+    canEditFiles: !!caps.canEditFiles,
+    canOpenInEditor: !!caps.canOpenInEditor,
+  };
   const aiSelectors = ['#distill-toggle', '#graph-insights-toggle'];
   for (const sel of aiSelectors) {
     const el = document.querySelector(sel);
-    if (el) el.style.display = caps.aiEnabled ? '' : 'none';
+    if (el) el.style.display = hostCaps.aiEnabled ? '' : 'none';
   }
-  document.body.classList.toggle('host-no-ai', !caps.aiEnabled);
-  document.body.classList.toggle('host-read-only', !caps.canEditFiles);
+  document.body.classList.toggle('host-no-ai', !hostCaps.aiEnabled);
+  document.body.classList.toggle('host-read-only', !hostCaps.canEditFiles);
+  // Hide editor-related buttons when host can't edit
+  const editBtn = document.getElementById('preview-edit-btn');
+  if (editBtn && !Editor.isEditing()) editBtn.style.display = hostCaps.canEditFiles ? '' : 'none';
+  const openBtn = document.getElementById('preview-open-btn');
+  if (openBtn && !Editor.isEditing()) openBtn.style.display = hostCaps.canOpenInEditor ? '' : 'none';
 }
 
 // ===== Message Handling =====
@@ -2243,6 +2399,12 @@ window.addEventListener('message', (event) => {
     Distill.updateAdrs();
     renderGraphToolbarLists();
     applyFilters();
+    // Keep the open preview in sync when its underlying file changes on disk.
+    // Skip while the user is mid-edit so we don't clobber unsaved work.
+    if (selectedAdrId && !Editor.isEditing()) {
+      const fresh = allAdrs.find(a => a.id === selectedAdrId);
+      if (fresh) Preview.show(fresh);
+    }
   } else if (msg.type === 'notify') {
     // Lightweight surface for non-VSCode hosts. VS Code has its own modal toasts.
     try { console[msg.level === 'error' ? 'error' : msg.level === 'warn' ? 'warn' : 'log']('[ADR]', msg.message); } catch {}
@@ -2296,6 +2458,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewCloseBtn = document.getElementById('preview-close-btn');
   if (previewCloseBtn) {
     previewCloseBtn.addEventListener('click', () => {
+      console.log('[ADR] close button clicked');
+      if (Editor.isEditing()) Editor._exit();
       selectedAdrId = null;
       Preview.close();
       Timeline.updateSelection(null);

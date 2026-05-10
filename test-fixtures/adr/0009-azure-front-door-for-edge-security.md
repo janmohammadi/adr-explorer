@@ -13,7 +13,7 @@ review-by: 2026-12-10
 confidence: high
 ---
 
-# Azure Front Door for Edge Security
+# XXXXAzure Front Door for Edge Security
 
 ## 1. Introduction
 

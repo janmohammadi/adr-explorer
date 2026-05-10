@@ -27,6 +27,20 @@ export class AdrRepository {
     return { dispose: () => { this.listeners.delete(listener); } };
   }
 
+  /**
+   * Update a single ADR's in-memory record from known content (skipping the
+   * disk read) and notify listeners. Used right after the inline editor
+   * writes a file, so the UI reflects the change without depending on the
+   * watcher's debounce — which on Windows can race with our own write.
+   */
+  upsertAdrFromContent(filePath: string, rawContent: string): void {
+    const adr = parseAdrFile(filePath, rawContent);
+    if (adr) {
+      this.adrs.set(filePath, adr);
+      this.fire();
+    }
+  }
+
   private fire(): void {
     for (const l of this.listeners) {
       try { l(); } catch { /* listener errors must not break the repo */ }

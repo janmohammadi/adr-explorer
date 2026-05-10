@@ -84,6 +84,27 @@ export class MessageRouter {
       case 'openDistillAdr':
         this.openDistillAdr(msg.adrId);
         break;
+      case 'saveAdr':
+        this.saveAdr(msg.filePath, msg.content);
+        break;
+    }
+  }
+
+  private async saveAdr(filePath: string, content: string): Promise<void> {
+    if (!this.capabilities.canEditFiles) {
+      this.host.notify('warn', 'This session is read-only. Re-run without --read-only to save edits.');
+      return;
+    }
+    try {
+      await this.fs.writeFile(filePath, content);
+      // Update the repo directly from the content we just wrote so the
+      // 'update' message we broadcast carries the new state. Doing this
+      // bypasses the file watcher's debounce/race window.
+      this.repo.upsertAdrFromContent(filePath, content);
+      this.host.extensions?.clearDistillDiagnostics?.(filePath);
+      this.host.notify('info', 'Saved.');
+    } catch (err: any) {
+      this.host.notify('error', `Failed to save: ${err?.message || err}`);
     }
   }
 

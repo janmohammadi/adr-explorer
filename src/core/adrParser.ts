@@ -87,6 +87,7 @@ export function parseAdrFile(filePath: string, rawContent: string): AdrRecord | 
       tags: Array.isArray(data.tags) ? data.tags : [],
       filePath,
       content,
+      rawContent,
       reviewBy,
       reviewInterval,
       expires,

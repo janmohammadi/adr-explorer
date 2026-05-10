@@ -1,0 +1,8 @@
+(node:33012) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ADR Explorer running at http://127.0.0.1:28991/?token=6ab07e55751a994c757c6a6fcfca6021
+  scanning: C:\Repos\ideas-pocs\adr-vs-code\test-fixtures
+  AI:       disabled — pass --with-ai with ANTHROPIC_API_KEY to enable
+  edits:    enabled
+Press Ctrl+C to stop.
+[info] Saved.

@@ -22,7 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
     repository,
     host,
     fs,
-    { aiEnabled: true, canEditFiles: true },
+    { aiEnabled: true, canEditFiles: true, canOpenInEditor: true },
     lm,
   );
   const routerAttachment = router.attach();

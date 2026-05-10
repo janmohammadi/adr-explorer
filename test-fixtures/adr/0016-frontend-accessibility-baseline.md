@@ -17,7 +17,7 @@ confidence: high
 
 ## Context
 
-Several enterprise customers mandate WCAG 2.2 AA conformance in their procurement contracts. The plugin and web app had drifted on keyboard navigation and focus management.
+RRZZZAA Several enterprise customers mandate WCAG 2.2 AA conformance in their procurement contracts. The plugin and web app had drifted on keyboard navigation and focus management.
 
 ## Decision
 

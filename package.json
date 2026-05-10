@@ -1,9 +1,10 @@
 {
   "name": "adr-explorer",
   "displayName": "ADR Explorer",
-  "description": "Visualize Architecture Decision Records with timeline and graph views — VS Code extension or standalone web app via npx.",
+  "description": "Visualize Architecture Decision Records with timeline and graph views — VS Code extension or standalone web app via npx. Pairs with deep-adr for authoring.",
   "version": "0.2.0",
-  "publisher": "adr-explorer",
+  "publisher": "reza-janm",
+  "icon": "media/icon.png",
   "author": {
     "name": "Reza Janmohammadi",
     "email": "janmohammadi.reza@gmail.com"
@@ -43,6 +44,7 @@
     "dist/",
     "media/explorer/explorer.css",
     "media/reset.css",
+    "media/icon.png",
     "README.md",
     "LICENSE"
   ],
@@ -86,8 +88,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.1",
     "chart.js": "^4.5.1",
     "chokidar": "^4.0.1",
+    "codemirror": "^6.0.2",
     "d3-drag": "^3.0.0",
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",

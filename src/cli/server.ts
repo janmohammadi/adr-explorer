@@ -39,7 +39,7 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     repo,
     host,
     fs,
-    { aiEnabled: opts.withAi, canEditFiles: !opts.readOnly },
+    { aiEnabled: opts.withAi, canEditFiles: !opts.readOnly, canOpenInEditor: false },
     opts.lm,
   );
   const routerAttachment = router.attach();

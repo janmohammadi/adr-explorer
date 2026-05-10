@@ -21,6 +21,13 @@ export function buildExplorerHtml(parts: {
 </head>
 <body>
   <div class="app">
+    <div id="empty-state" class="empty-state" style="display:none">
+      <div class="empty-state-card">
+        <div class="empty-state-title">No ADRs found yet</div>
+        <p class="empty-state-body">Start your first decision with <strong>deep-adr</strong> &mdash; a Claude skill bundle that co-thinks the decision with you, pushes back on weak reasoning, and writes the markdown for this explorer to pick up.</p>
+        <a class="empty-state-link" href="https://github.com/janmohammadi/deep-adr" target="_blank" rel="noopener noreferrer">Get deep-adr &rarr;</a>
+      </div>
+    </div>
     <div class="header">
       <div class="header-left">
         <div class="header-search">
@@ -142,11 +149,25 @@ export function buildExplorerHtml(parts: {
             <span id="preview-title" class="preview-header-title"></span>
           </div>
           <div class="preview-header-actions">
-            <button id="preview-edit-btn" class="preview-btn preview-btn-primary" title="Open in editor">
+            <button id="preview-edit-btn" class="preview-btn preview-btn-primary" title="Edit ADR inline">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>
               </svg>
               Edit
+            </button>
+            <button id="preview-open-btn" class="preview-btn" title="Open in IDE" style="display:none">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              </svg>
+            </button>
+            <button id="preview-save-btn" class="preview-btn preview-btn-primary" title="Save changes" style="display:none">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save
+            </button>
+            <button id="preview-cancel-btn" class="preview-btn" title="Discard changes" style="display:none">
+              Cancel
             </button>
             <button id="preview-close-btn" class="preview-close" title="Close preview">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -157,6 +178,7 @@ export function buildExplorerHtml(parts: {
         </div>
         <div id="preview-meta" class="preview-meta"></div>
         <div id="preview-body" class="preview-body"></div>
+        <div id="preview-editor" class="preview-editor" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -259,6 +281,9 @@ export function buildExplorerHtml(parts: {
         </div>
         <div id="distill-content-body" class="distill-content-body">
           <div class="distill-content-empty">Select an ADR from the list to view suggestions</div>
+        </div>
+        <div class="distill-deep-adr-footer">
+          Want to critique while you write, not after? Use <a href="https://github.com/janmohammadi/deep-adr" target="_blank" rel="noopener noreferrer">deep-adr</a> skills with Claude.
         </div>
       </div>
     </div>
