@@ -63,6 +63,9 @@ export class MessageRouter {
       case 'requestData':
         this.sendData();
         break;
+      case 'refreshData':
+        void this.repo.reconcile().then(() => this.sendData());
+        break;
       case 'openFile':
         this.openFile(msg.filePath);
         break;

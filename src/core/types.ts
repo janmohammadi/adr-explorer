@@ -157,4 +157,5 @@ export type WebviewToExtensionMessage =
   | { type: 'applyDistillAll'; adrId: string }
   | { type: 'openDistillAdr'; adrId: string }
   | { type: 'saveAdr'; filePath: string; content: string }
+  | { type: 'refreshData' }
   | { type: 'ready' };

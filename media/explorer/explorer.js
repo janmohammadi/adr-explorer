@@ -2434,6 +2434,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('search-input');
   if (searchInput) searchInput.addEventListener('input', onSearchInput);
 
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      host.postMessage({ type: 'refreshData' });
+    });
+  }
+
   const graphContainer = document.getElementById('graph-container');
   if (graphContainer) Graph.init(graphContainer);
 

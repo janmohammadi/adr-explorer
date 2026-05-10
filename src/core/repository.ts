@@ -13,6 +13,7 @@ export class AdrRepository {
   private adrs: Map<string, AdrRecord> = new Map();
   private listeners = new Set<ChangeListener>();
   private watcherDisposable: FsDisposable | undefined;
+  private reconcileTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private fs: AdrFileSystem, private rootDir: string) {}
 
@@ -20,6 +21,38 @@ export class AdrRepository {
     this.adrs.clear();
     await this.scan();
     this.setupWatcher();
+  }
+
+  /**
+   * Authoritative rescan: drop in-memory entries whose files no longer exist,
+   * load any new ones found on disk. Used to recover from missed watcher
+   * delete events (Windows directory rename / bulk delete can coalesce them).
+   */
+  async reconcile(): Promise<void> {
+    const paths = await this.fs.findAdrFiles(this.rootDir);
+    const onDisk = new Set(paths);
+    let changed = false;
+    for (const key of Array.from(this.adrs.keys())) {
+      if (!onDisk.has(key)) {
+        this.adrs.delete(key);
+        changed = true;
+      }
+    }
+    for (const p of paths) {
+      if (!this.adrs.has(p)) {
+        await this.loadAdr(p);
+        changed = true;
+      }
+    }
+    if (changed) this.fire();
+  }
+
+  private scheduleReconcile(): void {
+    if (this.reconcileTimer) clearTimeout(this.reconcileTimer);
+    this.reconcileTimer = setTimeout(() => {
+      this.reconcileTimer = undefined;
+      void this.reconcile();
+    }, 250);
   }
 
   onChange(listener: ChangeListener): FsDisposable {
@@ -75,6 +108,9 @@ export class AdrRepository {
         await this.loadAdr(event.path);
       }
       this.fire();
+      // Defend against missed delete events (e.g. Windows directory rename
+      // coalesces per-file deletes) by reconciling against disk shortly after.
+      this.scheduleReconcile();
     });
   }
 
@@ -111,6 +147,10 @@ export class AdrRepository {
   }
 
   dispose(): void {
+    if (this.reconcileTimer) {
+      clearTimeout(this.reconcileTimer);
+      this.reconcileTimer = undefined;
+    }
     this.watcherDisposable?.dispose();
     this.listeners.clear();
   }
