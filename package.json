@@ -2,7 +2,7 @@
   "name": "adr-explorer",
   "displayName": "ADR Explorer",
   "description": "Visualize Architecture Decision Records with timeline and graph views — VS Code extension or standalone web app via npx. Pairs with deep-adr for authoring.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "reza-janm",
   "icon": "media/icon.png",
   "author": {
