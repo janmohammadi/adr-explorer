@@ -2836,6 +2836,76 @@ body.resizing .resize-handle {
   background: #2563eb;
 }
 
+/* ===== Home banner promoting deep-adr ===== */
+.deep-adr-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin: 0;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
+  border-bottom: 1px solid #2a2b2e;
+  color: #d4d4e0;
+  font-size: 12px;
+}
+.deep-adr-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+.deep-adr-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.deep-adr-banner-text strong {
+  color: #e0e0f0;
+  font-weight: 600;
+}
+.deep-adr-banner-text span {
+  color: #8a8a9a;
+  font-size: 11px;
+}
+.deep-adr-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #3b82f6;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.deep-adr-banner-cta:hover {
+  background: #2563eb;
+}
+.deep-adr-banner-close {
+  background: transparent;
+  border: none;
+  color: #8a8a9a;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.deep-adr-banner-close:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #d4d4e0;
+}
+
 /* ===== Distill panel deep-adr footer ===== */
 .distill-deep-adr-footer {
   padding: 10px 16px;

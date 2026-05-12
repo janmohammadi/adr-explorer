@@ -63,21 +63,21 @@ Claude flags filler and over-detail per ADR, with one-click apply:
 
 ## Authoring ADRs with deep-adr
 
-ADR Explorer reads and audits an ADR corpus. It doesn't write the decisions for you. For that, use its companion: **[deep-adr](https://github.com/janmohammadi/deep-adr)** — a Claude skill bundle that co-thinks each decision with you, pushes back on weak reasoning, and refuses to ship a tutorial-shaped ADR.
+ADR Explorer reads and audits an ADR corpus. It doesn't write the decisions for you. For that, use its companion: **[deep-adr](https://github.com/janmohammadi/deep-adr)** — four coding-agent skills (`adr-discovery`, `draft-adr`, `adr-critique`, `c4-model`) that co-think each decision with you and push back on weak reasoning. Works with Claude Code, Cursor, OpenCode, GitHub Copilot, and other agents supported by the [`skills`](https://github.com/vercel-labs/skills) CLI.
 
 ```text
-deep-adr (draft + critique)  →  *.md on disk  →  ADR Explorer (visualize + audit + distill)
+deep-adr (discover + draft + critique + C4)  →  *.md on disk  →  ADR Explorer (visualize + audit + distill)
 ```
 
 The two cover opposite halves of the ADR lifecycle:
 
 | | deep-adr | ADR Explorer |
 |---|---|---|
-| When | While writing one decision | After many exist |
-| Mode | Co-author + critic | Visual audit + distill |
-| Surface | Claude skills | Browser / VS Code webview |
+| When | While authoring decisions | After many exist |
+| Mode | Discover + co-author + critique + model | Visual audit + distill |
+| Surface | Coding-agent skills (Claude Code, Cursor, Copilot, …) | Browser / VS Code webview |
 
-Install the skills once and they'll be available next time you ask Claude to draft an ADR. See the [deep-adr README](https://github.com/janmohammadi/deep-adr#install) for setup.
+Install the skills once and they'll be available next time you ask your coding agent to discover, draft, critique, or model an ADR. See the [deep-adr README](https://github.com/janmohammadi/deep-adr#install) for setup.
 
 ---
 

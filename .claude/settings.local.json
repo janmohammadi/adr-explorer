@@ -18,7 +18,12 @@
       "Bash(node scripts/e2e-editor.mjs)",
       "Bash(node dist/cli.js --root test-fixtures --no-open --port 28992)",
       "Bash(node -e ' *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(git remote *)",
+      "Bash(node -p \"JSON.stringify\\(require\\('./package.json'\\).scripts, null, 2\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

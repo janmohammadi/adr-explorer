@@ -2441,6 +2441,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const deepAdrBanner = document.getElementById('deep-adr-banner');
+  const deepAdrBannerClose = document.getElementById('deep-adr-banner-close');
+  if (deepAdrBanner) {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('adrExplorer.deepAdrBannerDismissed') === '1'; } catch (e) {}
+    if (!dismissed) deepAdrBanner.style.display = 'flex';
+  }
+  if (deepAdrBannerClose) {
+    deepAdrBannerClose.addEventListener('click', () => {
+      if (deepAdrBanner) deepAdrBanner.style.display = 'none';
+      try { localStorage.setItem('adrExplorer.deepAdrBannerDismissed', '1'); } catch (e) {}
+    });
+  }
+
   const graphContainer = document.getElementById('graph-container');
   if (graphContainer) Graph.init(graphContainer);
 

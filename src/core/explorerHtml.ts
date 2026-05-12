@@ -24,8 +24,8 @@ export function buildExplorerHtml(parts: {
     <div id="empty-state" class="empty-state" style="display:none">
       <div class="empty-state-card">
         <div class="empty-state-title">No ADRs found yet</div>
-        <p class="empty-state-body">Start your first decision with <strong>deep-adr</strong> &mdash; a Claude skill bundle that co-thinks the decision with you, pushes back on weak reasoning, and writes the markdown for this explorer to pick up.</p>
-        <a class="empty-state-link" href="https://github.com/janmohammadi/deep-adr" target="_blank" rel="noopener noreferrer">Get deep-adr &rarr;</a>
+        <p class="empty-state-body">Start your first decision with <strong>deep-adr</strong> &mdash; four coding-agent skills (discovery, drafting, critique, C4 modeling) that co-think with you and push back on weak reasoning. Works with Claude Code, Cursor, Copilot, and more.</p>
+        <a class="empty-state-link" href="https://github.com/janmohammadi/deep-adr#install" target="_blank" rel="noopener noreferrer">Install the skills &rarr;</a>
       </div>
     </div>
     <div class="header">
@@ -59,6 +59,24 @@ export function buildExplorerHtml(parts: {
         </button>
         <span id="record-count" class="header-count"></span>
       </div>
+    </div>
+    <div id="deep-adr-banner" class="deep-adr-banner" style="display:none">
+      <div class="deep-adr-banner-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+          <path d="M20 3v4"/><path d="M22 5h-4"/>
+        </svg>
+      </div>
+      <div class="deep-adr-banner-text">
+        <strong>Author ADRs with deep-adr</strong>
+        <span>Four coding-agent skills &mdash; discovery, drafting, critique, and C4 modeling &mdash; that co-think each decision and push back on weak reasoning. Works with Claude Code, Cursor, Copilot, and more.</span>
+      </div>
+      <a class="deep-adr-banner-cta" href="https://github.com/janmohammadi/deep-adr#install" target="_blank" rel="noopener noreferrer">Install the skills &rarr;</a>
+      <button id="deep-adr-banner-close" class="deep-adr-banner-close" title="Don't show this again" aria-label="Don't show this again">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
     </div>
     <div id="health-dashboard" class="health-dashboard collapsed">
       <div class="health-header" id="health-header-toggle">
@@ -290,7 +308,7 @@ export function buildExplorerHtml(parts: {
           <div class="distill-content-empty">Select an ADR from the list to view suggestions</div>
         </div>
         <div class="distill-deep-adr-footer">
-          Want to critique while you write, not after? Use <a href="https://github.com/janmohammadi/deep-adr" target="_blank" rel="noopener noreferrer">deep-adr</a> skills with Claude.
+          Want to critique while you write, not after? Use the <a href="https://github.com/janmohammadi/deep-adr" target="_blank" rel="noopener noreferrer">deep-adr</a> skills with your coding agent.
         </div>
       </div>
     </div>
