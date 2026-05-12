@@ -7,7 +7,7 @@ Browse, analyze, and tidy your Architecture Decision Records in a graph + timeli
 
 Both targets ship from the same repo and share the same UI bundle.
 
-![ADR Explorer — graph view](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/graph.png)
+![ADR Explorer — feature overview](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-explorer-review.gif)
 
 ---
 

@@ -27,14 +27,21 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   const routerAttachment = router.attach();
 
-  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBarItem.text = '$(layout) ADR Explorer';
-  statusBarItem.tooltip = 'Open ADR Explorer';
-  statusBarItem.command = 'adrExplorer.open';
-  statusBarItem.show();
+  const launcherProvider: vscode.TreeDataProvider<never> = {
+    getTreeItem: () => { throw new Error('unreachable'); },
+    getChildren: () => [],
+  };
+  const launcherView = vscode.window.createTreeView('adrExplorer.launcher', {
+    treeDataProvider: launcherProvider,
+  });
+  launcherView.onDidChangeVisibility((e) => {
+    if (e.visible) {
+      void vscode.commands.executeCommand('adrExplorer.open');
+    }
+  });
 
   context.subscriptions.push(
-    statusBarItem,
+    launcherView,
     vscode.commands.registerCommand('adrExplorer.open', () => {
       const opening = !host.isOpen;
       host.showPanel();

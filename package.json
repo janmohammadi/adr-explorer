@@ -45,6 +45,7 @@
     "media/explorer/explorer.css",
     "media/reset.css",
     "media/icon.png",
+    "media/activity-bar-icon.svg",
     "README.md",
     "LICENSE"
   ],
@@ -64,6 +65,31 @@
         "title": "Refresh",
         "category": "ADR Explorer",
         "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adrExplorer",
+          "title": "ADR Explorer",
+          "icon": "media/activity-bar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "adrExplorer": [
+        {
+          "id": "adrExplorer.launcher",
+          "name": "ADR Explorer",
+          "icon": "media/activity-bar-icon.svg",
+          "contextualTitle": "ADR Explorer"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "adrExplorer.launcher",
+        "contents": "Click below to open the ADR Explorer.\n\n[Open ADR Explorer](command:adrExplorer.open)\n\nThe Explorer opens in a full editor tab where you can browse, search, and visualize your Architecture Decision Records."
       }
     ]
   },
