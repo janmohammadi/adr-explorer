@@ -7,6 +7,10 @@ Browse, analyze, and tidy your Architecture Decision Records in a graph + timeli
 
 Both targets ship from the same repo and share the same UI bundle.
 
+[![Install from VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/reza-janm.adr-explorer?label=VS%20Code%20Marketplace&logo=visualstudiocode&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
+
+> **Install the VS Code extension:** [marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
+
 ![ADR Explorer — feature overview](https://raw.githubusercontent.com/janmohammadi/adr-explorer/main/docs/screenshots/adr-explorer-review.gif)
 
 ---
@@ -138,9 +142,9 @@ Without `--with-ai`, the AI buttons are hidden and the tool runs as a viewer/ana
 
 ## Quick start (VS Code extension)
 
-1. Install the extension from the marketplace (or `vsce package` + install locally).
+1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer) (or `vsce package` + install locally).
 2. Open a folder containing ADRs.
-3. Click the `ADR Explorer` status bar item, or run `ADR Explorer: Open` from the command palette.
+3. Click the **ADR Explorer** icon in the Activity Bar (left sidebar) and hit *Open ADR Explorer*, or run `ADR Explorer: Open` from the command palette.
 
 The VS Code path uses the **GitHub Copilot Language Model API** (Claude via Copilot), so no API key is needed if you have Copilot. The npx path uses the Anthropic API directly.
 
