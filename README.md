@@ -7,7 +7,8 @@ Browse, analyze, and tidy your Architecture Decision Records in a graph + timeli
 
 Both targets ship from the same repo and share the same UI bundle.
 
-[![Install from VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/reza-janm.adr-explorer?label=VS%20Code%20Marketplace&logo=visualstudiocode&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
+[![VS Code Marketplace version](https://vsmarketplacebadges.dev/version-short/reza-janm.adr-explorer.svg?label=VS%20Code%20Marketplace&style=for-the-badge&color=007ACC&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/reza-janm.adr-explorer.svg?style=for-the-badge&color=007ACC)](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
 
 > **Install the VS Code extension:** [marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer](https://marketplace.visualstudio.com/items?itemName=reza-janm.adr-explorer)
 
